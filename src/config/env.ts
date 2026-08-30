@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ALERT_CHANNELS } from '../domain/enums.js';
 
 /**
  * Central, validated environment configuration.
@@ -79,6 +80,24 @@ const EnvSchema = z.object({
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   ALERT_SLACK_WEBHOOK_URL: z.string().url().optional(),
   WEBHOOK_SIGNING_SECRET: z.string().optional(),
+
+  // Firebase Cloud Messaging (PUSH channel). Point at a service-account JSON
+  // downloaded from the Firebase console; the channel mints its own OAuth2
+  // token and calls the FCM HTTP v1 API. Unset → PUSH alerts are logged only.
+  FCM_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  // Topic delivered to when an alert's recipient is not itself a token/topic
+  // (e.g. the default "ops" recipient). Subscribe devices to this topic.
+  FCM_DEFAULT_TOPIC: z.string().optional(),
+
+  // Where the incident engine sends its automatic alerts (open / degrade /
+  // recover / flapping). Comma-separated channel list; each must be a valid
+  // alert_channel. Set "WEBHOOK,PUSH" to fan out to both.
+  ALERT_DEFAULT_CHANNELS: z
+    .string()
+    .default('WEBHOOK')
+    .transform((s) => s.split(',').map((c) => c.trim().toUpperCase()))
+    .pipe(z.array(z.enum(ALERT_CHANNELS)).min(1)),
+  ALERT_DEFAULT_RECIPIENT: z.string().default('ops'),
 
   // Suppress alerts for CRITICAL/money-moving targets no more than once per this
   // window unless severity escalates or the next tier fires (spec 8.9).

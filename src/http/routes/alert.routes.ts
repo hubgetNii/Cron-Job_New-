@@ -3,8 +3,10 @@ import { z } from 'zod';
 import { actorFromRequest } from '../actor.js';
 import { requireRole } from '../middleware/auth.js';
 import { pruneUndefined } from '../../lib/objects.js';
-import { ALERT_STATUSES, ALERT_TYPES } from '../../domain/enums.js';
+import { ALERT_CHANNELS, ALERT_STATUSES, ALERT_TYPES } from '../../domain/enums.js';
 import { listAlerts } from '../../repositories/alerts.repo.js';
+import { channelFor } from '../../services/alert/channels.js';
+import { recordAudit } from '../../services/audit/audit.service.js';
 import { listOnCallSchedules } from '../../repositories/escalation-policies.repo.js';
 import {
   createEscalationPolicy,
@@ -36,6 +38,35 @@ const alertQuery = z.object({
 alertRouter.get('/alerts', async (req: Request, res: Response) => {
   const alerts = await listAlerts(pruneUndefined(alertQuery.parse(req.query)));
   res.json({ data: alerts, count: alerts.length });
+});
+
+/* --- send a synthetic alert through a channel (ADMIN, for wiring up transports) */
+
+const testAlertBody = z.object({
+  channel: z.enum(ALERT_CHANNELS),
+  recipient: z.string().min(1).max(4096).optional(),
+  message: z.string().max(500).optional(),
+});
+
+alertRouter.post('/alerts/test', admin, async (req: Request, res: Response) => {
+  const body = testAlertBody.parse(req.body ?? {});
+  const outcome = await channelFor(body.channel).send({
+    alertType: 'API_DOWN',
+    severity: 'INFO',
+    subject: body.message ?? `Test alert via ${body.channel}`,
+    body: 'This is a test notification from the FinTech Cron Monitor. No incident is open.',
+    recipient: body.recipient ?? 'ops',
+    incidentNumber: null,
+    targetName: null,
+    payload: { test: true },
+  });
+  await recordAudit({
+    actor: actorFromRequest(req),
+    action: 'alert.test_sent',
+    entityType: 'alert',
+    summary: `Test alert via ${body.channel} → ${outcome.ok ? 'ok' : 'failed'} (${outcome.detail})`,
+  });
+  res.status(outcome.ok ? 200 : 502).json({ data: { channel: body.channel, ...outcome } });
 });
 
 /* --- escalation policies --------------------------------------------- */

@@ -3,7 +3,7 @@ import { componentLogger } from '../../lib/logger.js';
 import type { SqlRunner } from '../../lib/db.js';
 import type { MonitoredApi } from '../../domain/target.js';
 import type { Incident } from '../../domain/incident.js';
-import type { CheckFailureType, HealthStatus, Severity } from '../../domain/enums.js';
+import type { AlertType, CheckFailureType, HealthStatus, Severity } from '../../domain/enums.js';
 import {
   countStatusTransitions,
   escalateIncident,
@@ -17,6 +17,26 @@ import { recordAlert } from '../../repositories/scheduler.repo.js';
 import { queueRecoveryAlerts } from '../alert/recovery.js';
 
 const log = componentLogger('incident');
+
+/**
+ * Queues one automatic alert per configured default channel (ALERT_DEFAULT_CHANNELS,
+ * e.g. "WEBHOOK,PUSH") to the default recipient. The delivery cycle then routes
+ * each to its transport.
+ */
+async function recordDefaultAlerts(
+  input: {
+    alertType: AlertType;
+    apiId: string;
+    incidentId: string;
+    errorMessage: string;
+  },
+  client: SqlRunner,
+): Promise<void> {
+  const recipient = env().ALERT_DEFAULT_RECIPIENT;
+  for (const channel of env().ALERT_DEFAULT_CHANNELS) {
+    await recordAlert({ ...input, channel, recipient }, client);
+  }
+}
 
 export interface CheckContext {
   target: MonitoredApi;
@@ -54,11 +74,9 @@ async function checkFlapping(
   if (transitions < env().FLAPPING_THRESHOLD) return null;
   if (active && active.incidentType !== 'FLAPPING') {
     await markIncidentFlapping(active.id, client);
-    await recordAlert(
+    await recordDefaultAlerts(
       {
         alertType: 'FLAPPING_DETECTED',
-        channel: 'WEBHOOK',
-        recipient: 'ops',
         apiId: target.id,
         incidentId: active.id,
         errorMessage: `"${target.name}" changed state ${transitions}× in ${env().FLAPPING_WINDOW_MINUTES}m`,
@@ -131,11 +149,9 @@ export async function processCheckOutcome(
       },
       client,
     );
-    await recordAlert(
+    await recordDefaultAlerts(
       {
         alertType: isDown ? 'API_DOWN' : 'API_DEGRADED',
-        channel: 'WEBHOOK',
-        recipient: 'ops',
         apiId: target.id,
         incidentId: incident.id,
         errorMessage: `${incident.incidentNumber} opened (${status}, ${failureType ?? 'n/a'})`,

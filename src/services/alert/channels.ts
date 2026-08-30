@@ -4,6 +4,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { env } from '../../config/index.js';
 import { componentLogger } from '../../lib/logger.js';
 import type { AlertChannel } from '../../domain/enums.js';
+import { FcmClient, getFcmClient } from './fcm.js';
 
 const log = componentLogger('alert-channel');
 
@@ -171,6 +172,37 @@ class SmsChannel implements Channel {
   }
 }
 
+class FcmPushChannel implements Channel {
+  readonly kind: AlertChannel = 'PUSH';
+
+  async send(n: Notification): Promise<DeliveryResult> {
+    if (!FcmClient.configured()) {
+      return loggedFallback('PUSH', n, 'FCM_SERVICE_ACCOUNT_FILE not set');
+    }
+    const str = (v: unknown): string =>
+      v == null ? '' : typeof v === 'string' ? v : JSON.stringify(v);
+    try {
+      const res = await getFcmClient().send({
+        recipient: n.recipient,
+        title: `[${n.severity}] ${n.subject}`,
+        body: n.body,
+        // FCM data values must all be strings.
+        data: {
+          alert_type: n.alertType,
+          severity: n.severity,
+          incident_number: n.incidentNumber ?? '',
+          target: n.targetName ?? '',
+          incident_id: str(n.payload['incident_id']),
+          api_id: str(n.payload['api_id']),
+        },
+      });
+      return { ok: true, detail: `FCM ${res.name.split('/').pop() ?? 'sent'}` };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  }
+}
+
 /** Logs the notification instead of delivering it — the last-resort transport. */
 class LogChannel implements Channel {
   constructor(readonly kind: AlertChannel) {}
@@ -195,7 +227,7 @@ export function channelFor(kind: AlertChannel): Channel {
       ['EMAIL', new EmailChannel()],
       ['SMS', new SmsChannel()],
       ['TEAMS', new LogChannel('TEAMS')],
-      ['PUSH', new LogChannel('PUSH')],
+      ['PUSH', new FcmPushChannel()],
       ['PHONE', new LogChannel('PHONE')],
     ]);
   }
