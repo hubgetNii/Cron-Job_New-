@@ -12,7 +12,7 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phase 1 — Foundation** and **Phase 2 — Database** complete.
+**Phases 1–3 complete** (Foundation, Database, Target Management).
 
 Phase 1:
 
@@ -39,9 +39,23 @@ Phase 2:
 - The `is_money_moving` 5-minute frequency floor stays in the validation layer (spec Rule 16),
   not the schema (a cron string can't be range-checked in SQL)
 
-Not yet built: target management (Phase 3), health-check execution engine (Phase 4),
-the cron engine (Phase 5), incidents engine (Phase 6), alerting (Phase 7), dashboard
-(Phase 8), security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
+Phase 3:
+
+- `POST/GET/PUT/DELETE /api/v1/targets` + `/targets/:id/enable` and `/disable`
+- Repository → service → controller layering; business logic never in routes
+- Validation (`zod`) with endpoint-class severity defaults, the money-moving frequency
+  floor (Rule 16), and cron-expression validation
+- **SSRF guard** (`src/lib/ssrf.ts`): blocks loopback / RFC1918 / link-local /
+  cloud-metadata targets — resolving the hostname first, so a DNS name pointing at a
+  private IP is still refused — unless `allowPrivateNetwork` is set
+- **Credential encryption at rest** (`src/lib/crypto/credential-cipher.ts`): AES-256-GCM
+  envelope with a local key-encryption key; plaintext credentials never touch the database
+  (Phase 9 swaps the local key for KMS)
+- Every mutating operation writes an immutable `audit_logs` row in the same transaction
+
+Not yet built: health-check execution engine (Phase 4), the cron engine (Phase 5),
+incidents engine (Phase 6), alerting (Phase 7), dashboard (Phase 8), security hardening
+(Phase 9), AI (Phase 10), reporting (Phase 11).
 
 ## Getting started
 
@@ -84,16 +98,17 @@ docker compose run --rm migrate
 
 ```
 src/
-  config/      validated env
-  lib/         logger, db, redis, errors, shutdown, version
-  domain/      enums.ts — controlled vocabularies mirrored from the DB
-  db/          schema tests (repositories land in Phase 3)
-  http/        express app, middleware, routes
-  scheduler/   scheduler process entrypoint   (Phase 5)
-  workers/     health-check worker entrypoint  (Phase 4/5)
-  watchdog/    independent dead-man's-switch   (Phase 5)
-  tests/       shared test setup
-migrations/    node-pg-migrate SQL migrations (baseline + Phase 2 schema)
+  config/         validated env
+  lib/            logger, db, redis, cron, ssrf, crypto, errors, shutdown
+  domain/         enums + entity types (mirrored from the DB)
+  repositories/   SQL data access, one module per aggregate
+  services/       business logic (target, audit, …)
+  http/           express app, middleware, routes, controllers
+  scheduler/      scheduler process entrypoint   (Phase 5)
+  workers/        health-check worker entrypoint  (Phase 4/5)
+  watchdog/       independent dead-man's-switch   (Phase 5)
+  tests/          shared test setup
+migrations/       node-pg-migrate SQL migrations
 ```
 
 Layering is enforced: **Controller → Service → Repository → Database**. Business logic

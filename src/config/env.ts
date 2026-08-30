@@ -24,6 +24,11 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
   ENCRYPTION_KMS_KEY_ID: z.string().optional(),
+  // Local key-encryption key for credential envelopes (base64, 32 bytes).
+  // Phase 9 replaces this with a KMS-backed key. Required in production.
+  CREDENTIAL_ENCRYPTION_KEY: z.string().optional(),
+  // Identifies this process in distributed locks, heartbeats and job records.
+  INSTANCE_ID: z.string().default('local-1'),
 
   SCHEDULER_LOCK_TTL_MS: z.coerce.number().int().positive().default(15_000),
   SCHEDULER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),

@@ -66,9 +66,15 @@ describe('routing fallbacks', () => {
     expect(res.body.error.requestId).toBeTruthy();
   });
 
-  it('/api/v1 is reserved but not yet implemented', async () => {
-    const res = await request(app).get('/api/v1/targets');
-    expect(res.status).toBe(501);
-    expect(res.body.error.code).toBe('NOT_IMPLEMENTED');
+  it('unknown /api/v1 routes still return a structured 404', async () => {
+    const res = await request(app).get('/api/v1/not-a-real-endpoint');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('rejects a non-uuid target id before touching the database', async () => {
+    const res = await request(app).get('/api/v1/targets/not-a-uuid');
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

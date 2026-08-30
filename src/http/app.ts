@@ -7,6 +7,7 @@ import { appInfo } from '../lib/version.js';
 import { requestContext } from './middleware/request-context.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { healthRouter } from './routes/health.routes.js';
+import { targetRouter } from './routes/target.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -41,12 +42,10 @@ export function createApp(): Express {
   // Ops endpoints are mounted at the root (see vault: "API Design").
   app.use(healthRouter);
 
-  // API surface is added phase by phase under /api/v1.
-  app.use('/api/v1', (_req: Request, res: Response) => {
-    res.status(501).json({
-      error: { code: 'NOT_IMPLEMENTED', message: 'API endpoints are added in later phases.' },
-    });
-  });
+  // API surface, added phase by phase under /api/v1.
+  const api = express.Router();
+  api.use(targetRouter);
+  app.use('/api/v1', api);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

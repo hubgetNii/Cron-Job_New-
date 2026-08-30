@@ -4,6 +4,18 @@ import { componentLogger } from './logger.js';
 
 const log = componentLogger('db');
 
+/**
+ * The narrow query surface shared by the pool, a pooled client and a
+ * transaction client. Repositories accept this so callers can opt into a
+ * transaction by passing their client.
+ */
+export interface SqlRunner {
+  query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    params?: readonly unknown[],
+  ): Promise<QueryResult<T>>;
+}
+
 let pool: Pool | undefined;
 
 export function getPool(): Pool {
@@ -34,6 +46,9 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   }
   return res;
 }
+
+/** The pool as an {@link SqlRunner}, for repositories called outside a transaction. */
+export const sql: SqlRunner = { query };
 
 /** Run a set of statements inside a single transaction. */
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
