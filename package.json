@@ -1,0 +1,60 @@
+{
+  "name": "fintech-cron-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cron-driven, minute-level health-check and incident engine for iSmartPay payment rails",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:scheduler": "tsx watch src/scheduler/main.ts",
+    "dev:worker": "tsx watch src/workers/main.ts",
+    "dev:watchdog": "tsx watch src/watchdog/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "node-pg-migrate -j sql -m migrations --envPath .env",
+    "migrate:up": "npm run migrate -- up",
+    "migrate:down": "npm run migrate -- down",
+    "migrate:create": "node-pg-migrate -j sql -m migrations create"
+  },
+  "dependencies": {
+    "bullmq": "^5.34.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "undici": "^7.2.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "node-pg-migrate": "^9.0.0",
+    "pino-pretty": "^13.0.0",
+    "prettier": "^3.4.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.19.1",
+    "vitest": "^4.1.11"
+  }
+}

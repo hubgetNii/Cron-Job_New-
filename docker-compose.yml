@@ -1,0 +1,114 @@
+# Local development topology.
+#
+#   docker compose up -d                 # postgres + redis only (for `npm run dev`)
+#   docker compose --profile full up -d   # the whole stack, containerised
+#   docker compose run --rm migrate       # apply database migrations
+#
+# See vault: "Performance, CI/CD and Deployment".
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cronmon
+      POSTGRES_PASSWORD: cronmon
+      POSTGRES_DB: cronmon
+    ports:
+      # Host port 5433 to avoid colliding with a local Postgres on 5432.
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cronmon -d cronmon']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      # Host port 6380 to avoid colliding with a local Redis on 6379.
+      - '6380:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    profiles: ['full', 'migrate']
+    command: ['node_modules/.bin/node-pg-migrate', '-j', 'sql', '-m', 'migrations', 'up']
+    environment:
+      DATABASE_URL: postgres://cronmon:cronmon@postgres:5432/cronmon
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build: .
+    profiles: ['full']
+    command: ['node', 'dist/server.js']
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgres://cronmon:cronmon@postgres:5432/cronmon
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build: .
+    profiles: ['full']
+    command: ['node', 'dist/scheduler/main.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://cronmon:cronmon@postgres:5432/cronmon
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    profiles: ['full']
+    command: ['node', 'dist/workers/main.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://cronmon:cronmon@postgres:5432/cronmon
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  # Ideally deployed to a different failure domain in production so a
+  # cluster-wide outage does not silence the dead-man's-switch too.
+  watchdog:
+    build: .
+    profiles: ['full']
+    command: ['node', 'dist/watchdog/main.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://cronmon:cronmon@postgres:5432/cronmon
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
