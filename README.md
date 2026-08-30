@@ -12,7 +12,7 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–3 complete** (Foundation, Database, Target Management).
+**Phases 1–4 complete** (Foundation, Database, Target Management, Health-Check Execution).
 
 Phase 1:
 
@@ -53,9 +53,21 @@ Phase 3:
   (Phase 9 swaps the local key for KMS)
 - Every mutating operation writes an immutable `audit_logs` row in the same transaction
 
-Not yet built: health-check execution engine (Phase 4), the cron engine (Phase 5),
-incidents engine (Phase 6), alerting (Phase 7), dashboard (Phase 8), security hardening
-(Phase 9), AI (Phase 10), reporting (Phase 11).
+Phase 4:
+
+- `POST /api/v1/targets/:id/test` — one-off check, not persisted, full outcome returned
+- Executor (`undici`): per-target timeout, retry with exponential backoff, transport-error
+  classification (TIMEOUT / DNS / CONNECTION / TLS), HTTP-status classification
+- Only transient failures are retried (timeout, 5xx, 429, connection); 4xx and validation
+  failures are not — a single blip never surfaces as DOWN, a deterministic failure never waits
+- Response validator: all 7 rule types (status, JSON equality, JSON path, contains/not-contains,
+  numeric threshold, structural schema, composite all/any). `HTTP 200` is never healthy on its own
+- Auth injection per `auth_type` (API key, bearer, basic, custom header; iSmartPay `apiId`/`apiSecret`)
+- `429` → `UNKNOWN`, not a hard DOWN; slow-but-passing → `DEGRADED`
+- Response samples are PCI-scrubbed (`lib/pci.ts`) before they can be stored or logged (Rule 20)
+
+Not yet built: the cron engine (Phase 5), incidents engine (Phase 6), alerting (Phase 7),
+dashboard (Phase 8), security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
 
 ## Getting started
 

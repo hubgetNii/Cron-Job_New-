@@ -4,6 +4,8 @@ import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { assertValidCron, InvalidCronError, intervalSeconds } from '../../lib/cron.js';
 import { assertUrlAllowed, SsrfBlockedError } from '../../lib/ssrf.js';
 import { encryptCredentials, type CredentialEnvelope } from '../../lib/crypto/credential-cipher.js';
+import { executeCheck } from '../health-check/executor.service.js';
+import type { HealthCheckOutcome } from '../../domain/health-check.js';
 import { DEFAULT_SEVERITY_BY_CLASS } from '../../domain/enums.js';
 import {
   MONEY_MOVING_MIN_INTERVAL_SECONDS,
@@ -208,6 +210,24 @@ export async function getTarget(id: string): Promise<MonitoredApi> {
 
 export function listTargets(filters: ListTargetFilters): Promise<MonitoredApi[]> {
   return listTargetRows(filters);
+}
+
+/**
+ * Runs a one-off health check against a target without persisting a result or
+ * touching the incident state machine — for operators verifying a new
+ * configuration ("Test target" in the vault's Phase 3 list).
+ */
+export async function testTarget(id: string, actor: AuditActor): Promise<HealthCheckOutcome> {
+  const target = await getTarget(id);
+  const outcome = await executeCheck(target);
+  await recordAudit({
+    actor,
+    action: 'target.tested',
+    entityType: 'monitored_api',
+    entityId: id,
+    summary: `Ad-hoc test of "${target.name}" → ${outcome.status} (HTTP ${outcome.httpStatus ?? 'n/a'}, ${outcome.attempts} attempt(s))`,
+  });
+  return outcome;
 }
 
 export async function updateTarget(

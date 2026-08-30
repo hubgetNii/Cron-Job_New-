@@ -8,6 +8,7 @@ import {
   getTarget,
   listTargets,
   setTargetEnabled,
+  testTarget,
   updateTarget,
 } from '../../services/target/target.service.js';
 import { ENDPOINT_CLASSES, ENVIRONMENTS } from '../../domain/enums.js';
@@ -67,4 +68,9 @@ targetRouter.post('/targets/:id/enable', async (req: Request, res: Response) => 
 targetRouter.post('/targets/:id/disable', async (req: Request, res: Response) => {
   const target = await setTargetEnabled(idParam.parse(req.params.id), false, actorFromRequest(req));
   res.json({ data: target });
+});
+
+targetRouter.post('/targets/:id/test', async (req: Request, res: Response) => {
+  const outcome = await testTarget(idParam.parse(req.params.id), actorFromRequest(req));
+  res.json({ data: outcome });
 });
