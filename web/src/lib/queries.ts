@@ -76,6 +76,16 @@ export function useAnalyzeIncident(id: string | null) {
   });
 }
 
+export const useSlaSummary = () =>
+  useQuery({ queryKey: ['sla-summary'], queryFn: api.slaSummary, refetchInterval: 30_000 });
+
+export const useTargetSla = (id: string | null) =>
+  useQuery({
+    queryKey: ['sla', id],
+    queryFn: () => api.targetSla(id!),
+    enabled: id != null,
+  });
+
 export function useTargetActions() {
   const qc = useQueryClient();
   const invalidate = () => {

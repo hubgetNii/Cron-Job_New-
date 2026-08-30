@@ -10,6 +10,9 @@ import type {
   IncidentAnalysis,
   MissedRun,
   PerfBucket,
+  PublicStatus,
+  SlaReport,
+  SlaSummaryRow,
   Target,
   TargetStatusRow,
   TestOutcome,
@@ -152,6 +155,12 @@ export const api = {
   targetAnomalies: (id: string) =>
     req<Wrapped<AnomalySignal[]>>(`/targets/${id}/anomalies`).then((r) => r.data),
 
+  slaSummary: () =>
+    req<Wrapped<{ targets: SlaSummaryRow[]; meeting: number; breaching: number }>>(
+      '/sla/summary',
+    ).then((r) => r.data),
+  targetSla: (id: string) => req<Wrapped<SlaReport[]>>(`/sla/${id}`).then((r) => r.data),
+
   login: (email: string, password: string) =>
     req<Wrapped<LoginResponse>>('/auth/login', {
       method: 'POST',
@@ -160,6 +169,28 @@ export const api = {
   logout: () => req<null>('/auth/logout', { method: 'POST' }).catch(() => null),
   me: () => req<Wrapped<AuthUser>>('/auth/me').then((r) => r.data),
 };
+
+/** Authenticated file download (compliance exports). Triggers a browser save. */
+export async function downloadWithAuth(path: string, filename: string): Promise<void> {
+  const res = await rawFetch(path, {});
+  if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Public, unauthenticated — the status page must work with no session. */
+export async function fetchPublicStatus(): Promise<PublicStatus> {
+  const res = await fetch(`${BASE}/status`);
+  if (!res.ok) throw new ApiError(`Status unavailable (${res.status})`, res.status);
+  return ((await res.json()) as Wrapped<PublicStatus>).data;
+}
 
 export interface ConfigChangeRequest {
   id: string;

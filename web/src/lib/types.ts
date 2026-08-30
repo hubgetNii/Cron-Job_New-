@@ -153,6 +153,46 @@ export interface Target {
   updatedAt: string;
 }
 
+export interface SlaSummaryRow {
+  apiId: string;
+  targetName: string;
+  endpointClass: string;
+  isMoneyMoving: boolean;
+  uptimePercent: number | null;
+  slaTargetPercent: number;
+  slaMet: boolean;
+  downtimeSeconds: number;
+  excludedSeconds: number;
+  generatedAt: string;
+}
+
+export interface SlaReport {
+  id: string;
+  apiId: string;
+  periodKind: 'rolling_30d' | 'calendar_month';
+  periodStart: string;
+  periodEnd: string;
+  uptimePercent: number | null;
+  downtimeSeconds: number;
+  excludedSeconds: number;
+  slaTargetPercent: number;
+  slaMet: boolean;
+  totalChecks: number;
+  failedChecks: number;
+  generatedAt: string;
+}
+
+export interface PublicStatus {
+  overall: 'operational' | 'degraded' | 'major_outage';
+  services: {
+    name: string;
+    endpointClass: string;
+    status: HealthStatus | null;
+    uptime90d: number | null;
+  }[];
+  generatedAt: string;
+}
+
 export type AiInsightKind =
   | 'failure_classification'
   | 'root_cause'

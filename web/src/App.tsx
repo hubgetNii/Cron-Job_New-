@@ -10,6 +10,8 @@ import { IncidentsPage } from '@/pages/incidents';
 import { SchedulerPage } from '@/pages/scheduler';
 import { AlertsPage } from '@/pages/alerts';
 import { ApprovalsPage } from '@/pages/approvals';
+import { SlaPage } from '@/pages/sla';
+import { StatusPage } from '@/pages/status';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },
@@ -22,6 +24,7 @@ function RequireAuth() {
 const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/status', element: <StatusPage /> },
   {
     element: <RequireAuth />,
     children: [
@@ -35,6 +38,7 @@ const router = createBrowserRouter([
           { path: 'scheduler', element: <SchedulerPage /> },
           { path: 'alerts', element: <AlertsPage /> },
           { path: 'approvals', element: <ApprovalsPage /> },
+          { path: 'sla', element: <SlaPage /> },
         ],
       },
     ],

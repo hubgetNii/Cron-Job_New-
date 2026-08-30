@@ -8,6 +8,7 @@ import {
   ShieldQuestion,
   Siren,
   CircleDot,
+  Gauge,
 } from 'lucide-react';
 import { useSummary } from '@/lib/queries';
 import { api } from '@/lib/api';
@@ -21,6 +22,7 @@ const NAV = [
   { to: '/app/scheduler', label: 'Scheduler', Icon: Activity },
   { to: '/app/alerts', label: 'Alerts', Icon: ListChecks },
   { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
+  { to: '/app/sla', label: 'SLA', Icon: Gauge },
 ];
 
 export function AppShell() {
