@@ -5,6 +5,7 @@ import { installShutdownHandlers, onShutdown } from '../lib/shutdown.js';
 import { closePool } from '../lib/db.js';
 import { closeRedis } from '../lib/redis.js';
 import { Scheduler } from '../services/scheduler/scheduler.service.js';
+import { startAlertRunner } from '../services/alert/alert-runner.js';
 
 const log = componentLogger('scheduler');
 
@@ -17,7 +18,8 @@ const log = componentLogger('scheduler');
 async function main(): Promise<void> {
   const scheduler = new Scheduler({ instanceId: env().INSTANCE_ID });
   await scheduler.start();
-  log.info('scheduler running');
+  const alertRunner = startAlertRunner();
+  log.info('scheduler running (with escalation + alert delivery)');
 
   // Pick up target create/update/enable/disable without a restart.
   const reloadTimer = setInterval(() => void scheduler.reload(), 30_000);
@@ -25,6 +27,7 @@ async function main(): Promise<void> {
 
   installShutdownHandlers();
   onShutdown(() => clearInterval(reloadTimer));
+  onShutdown(() => alertRunner.stop());
   onShutdown(() => scheduler.stop());
   onShutdown(closePool);
   onShutdown(closeRedis);

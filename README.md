@@ -12,8 +12,8 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–6 complete.** The cron engine (the core deliverable) passed its GATE chaos
-tests; the incident state machine now sits on top of it.
+**Phases 1–7 complete.** The cron engine (the core deliverable) passed its GATE chaos
+tests; incidents, tiered escalation and alert delivery sit on top of it.
 
 Phase 1:
 
@@ -103,9 +103,23 @@ Phase 6 — **incident engine** (`services/incident/`):
 - `GET /api/v1/incidents`, `GET /incidents/:id`, `POST /:id/acknowledge`, `POST /:id/resolve`
   (resolution note required), `PATCH /:id/root-cause` — all audit-logged
 
-Not yet built: alerting delivery + escalation (Phase 7), dashboard (Phase 8), security
-hardening (Phase 9), AI (Phase 10), reporting (Phase 11). Alerts are *recorded* in the
-`alerts` table; Phase 7 delivers them and drives escalation tiers.
+Phase 7 — **alerting & escalation** (`services/alert/`, runs in the scheduler process):
+
+- **Channels**: Webhook (HMAC-signed via `WEBHOOK_SIGNING_SECRET`), Slack, Email
+  (`nodemailer`), SMS (generic provider POST); Teams/Push/Phone log until wired. A channel
+  with no transport configured **logs** the notification rather than dropping it
+- **Escalation engine**: one due tier per cycle per OPEN incident; tier delays measured
+  from `started_at`; **stops the moment an incident is acknowledged**; a tier with
+  `condition: "is_money_moving"` only fires for money-moving incidents (spec 8.9 tier 4)
+- **Maintenance windows** (`POST/GET/DELETE /api/v1/maintenance-windows`, ≤30 days,
+  target-specific or global): alerts for a target inside a window are marked `SUPPRESSED`,
+  **the check still runs and records** — recovery alerts are never suppressed
+- **Recovery fan-out**: when an incident resolves, `API_RECOVERED` is queued to every
+  channel+recipient that was notified about it
+- `GET /api/v1/alerts`, `GET/POST/PUT /api/v1/escalation-policies`, `GET /api/v1/on-call-schedules`
+
+Not yet built: dashboard (Phase 8), security hardening (Phase 9), AI (Phase 10),
+reporting (Phase 11).
 
 ## Getting started
 

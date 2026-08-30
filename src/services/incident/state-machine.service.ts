@@ -14,6 +14,7 @@ import {
   resolveIncident,
 } from '../../repositories/incidents.repo.js';
 import { recordAlert } from '../../repositories/scheduler.repo.js';
+import { queueRecoveryAlerts } from '../alert/recovery.js';
 
 const log = componentLogger('incident');
 
@@ -100,17 +101,7 @@ export async function processCheckOutcome(
     if (ctx.consecutiveSuccesses >= env().INCIDENT_RECOVERY_STREAK) {
       const resolved = await resolveIncident(active.id, null, client);
       if (!resolved) return { kind: 'noop' };
-      await recordAlert(
-        {
-          alertType: 'API_RECOVERED',
-          channel: 'WEBHOOK',
-          recipient: 'ops',
-          apiId: target.id,
-          incidentId: resolved.id,
-          errorMessage: `Recovered after ${resolved.durationSeconds ?? '?'}s`,
-        },
-        client,
-      );
+      await queueRecoveryAlerts(resolved.id, target.id, client);
       log.info(
         {
           incident: resolved.incidentNumber,

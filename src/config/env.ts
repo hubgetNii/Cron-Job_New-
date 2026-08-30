@@ -41,12 +41,24 @@ const EnvSchema = z.object({
   FLAPPING_THRESHOLD: z.coerce.number().int().min(2).default(4),
   FLAPPING_WINDOW_MINUTES: z.coerce.number().int().min(1).default(10),
 
+  // Notification channels (Phase 7). Each channel needs a transport configured;
+  // when one is missing the channel logs the notification instead of dropping it.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().max(65_535).default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
+  ALERT_EMAIL_FROM: z.string().optional(),
+  ALERT_EMAIL_TO: z.string().optional(),
+  SMS_PROVIDER_URL: z.string().url().optional(),
   SMS_PROVIDER_API_KEY: z.string().optional(),
+  ALERT_SMS_TO: z.string().optional(),
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
+  ALERT_SLACK_WEBHOOK_URL: z.string().url().optional(),
   WEBHOOK_SIGNING_SECRET: z.string().optional(),
+
+  // Suppress alerts for CRITICAL/money-moving targets no more than once per this
+  // window unless severity escalates or the next tier fires (spec 8.9).
+  ALERT_SUPPRESSION_WINDOW_MINUTES: z.coerce.number().int().min(1).default(30),
 
   WATCHDOG_EXTERNAL_ENDPOINT: z.string().url().optional(),
 

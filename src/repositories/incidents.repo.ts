@@ -182,6 +182,31 @@ export interface ListIncidentFilters {
   offset?: number;
 }
 
+export interface EscalatableIncident {
+  incident: Incident;
+  escalationPolicyId: string;
+  targetName: string;
+}
+
+/** OPEN incidents whose target has an escalation policy — the escalation engine's work list. */
+export async function listOpenIncidentsForEscalation(): Promise<EscalatableIncident[]> {
+  const { rows } = await query<Record<string, unknown>>(
+    `SELECT ${COLUMNS.split(',')
+      .map((c) => `i.${c.trim()}`)
+      .join(', ')},
+            m.escalation_policy_id, m.name AS target_name
+     FROM incidents i
+     JOIN monitored_apis m ON m.id = i.api_id
+     WHERE i.status = 'OPEN' AND m.escalation_policy_id IS NOT NULL
+     ORDER BY i.started_at ASC`,
+  );
+  return rows.map((r) => ({
+    incident: toDomain(r),
+    escalationPolicyId: r['escalation_policy_id'] as string,
+    targetName: r['target_name'] as string,
+  }));
+}
+
 export async function listIncidents(filters: ListIncidentFilters = {}): Promise<Incident[]> {
   const params: unknown[] = [];
   const where: string[] = [];
