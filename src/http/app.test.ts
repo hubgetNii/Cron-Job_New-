@@ -3,9 +3,11 @@ import request from 'supertest';
 
 const checkDbHealth = vi.fn();
 const checkRedisHealth = vi.fn();
+const getSchedulerStatus = vi.fn();
 
 vi.mock('../lib/db.js', () => ({ checkDbHealth }));
 vi.mock('../lib/redis.js', () => ({ checkRedisHealth }));
+vi.mock('../services/scheduler/scheduler-status.service.js', () => ({ getSchedulerStatus }));
 
 const { createApp } = await import('./app.js');
 const app = createApp();
@@ -13,6 +15,12 @@ const app = createApp();
 beforeEach(() => {
   checkDbHealth.mockResolvedValue({ ok: true, latencyMs: 3 });
   checkRedisHealth.mockResolvedValue({ ok: true, latencyMs: 1 });
+  getSchedulerStatus.mockResolvedValue({
+    health: 'not_running',
+    heartbeat: null,
+    graceMs: 30_000,
+    missedRunTotal: 0,
+  });
 });
 
 describe('ops endpoints', () => {
@@ -43,10 +51,29 @@ describe('ops endpoints', () => {
     expect(res.body).toHaveProperty('version');
   });
 
-  it('GET /health/scheduler is a documented Phase 5 placeholder', async () => {
+  it('GET /health/scheduler reflects scheduler status (503 when not running)', async () => {
     const res = await request(app).get('/health/scheduler');
     expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({ status: 'not_implemented', phase: 5 });
+    expect(res.body.status).toBe('not_running');
+    expect(res.body).toHaveProperty('missedRunTotal', 0);
+  });
+
+  it('GET /health/scheduler is 200 when the scheduler is ticking', async () => {
+    getSchedulerStatus.mockResolvedValue({
+      health: 'ok',
+      heartbeat: {
+        instanceId: 's1',
+        lastTickAt: new Date().toISOString(),
+        activeJobCount: 2,
+        queueDepth: 0,
+        ageMs: 1200,
+      },
+      graceMs: 30_000,
+      missedRunTotal: 0,
+    });
+    const res = await request(app).get('/health/scheduler');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'ok', activeJobCount: 2 });
   });
 
   it('sets a correlation id header and echoes an inbound one', async () => {

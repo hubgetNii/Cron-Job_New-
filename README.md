@@ -12,7 +12,8 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–4 complete** (Foundation, Database, Target Management, Health-Check Execution).
+**Phases 1–5 complete.** The cron engine — the core deliverable — is built and its
+reliability guarantees are proven by the GATE chaos tests.
 
 Phase 1:
 
@@ -66,8 +67,30 @@ Phase 4:
 - `429` → `UNKNOWN`, not a hard DOWN; slow-but-passing → `DEGRADED`
 - Response samples are PCI-scrubbed (`lib/pci.ts`) before they can be stored or logged (Rule 20)
 
-Not yet built: the cron engine (Phase 5), incidents engine (Phase 6), alerting (Phase 7),
-dashboard (Phase 8), security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
+Phase 5 — **the cron engine**:
+
+- Single-node, DB-driven scheduler (`services/scheduler/`): a 1s tick compares each
+  target's most recent wall-clock slot to the last one it fired, so scheduling is
+  anchored to `:00` boundaries and **never drifts** (`setInterval` is not used for timing)
+- **Distributed lock** per `(target, slot)` — a Postgres table with a TTL, so a crashed
+  holder's lock self-expires and is stolen rather than deadlocking (spec's "simpler fallback")
+- **Idempotent** `job_run_id` = `targetId:slotEpoch`; a result already recorded is never
+  re-executed — safe to run multiple schedulers/workers
+- **Dead-letter path**: a check that fails to *run* (vs. a target that's DOWN) →
+  `cron_job_runs` `DEAD_LETTERED` + `JOB_EXECUTION_FAILURE` alert
+- **Missed-run detection**: slots skipped while the scheduler was down are counted and
+  alerted (`SCHEDULER_HEARTBEAT_MISSED`), per target and scheduler-wide
+- **Independent watchdog** (`watchdog/` process, separate container): polls the scheduler
+  heartbeat; if it goes stale it fires CRITICAL through `WATCHDOG_EXTERNAL_ENDPOINT` — a
+  path that shares nothing with the primary alert engine
+- Real `GET /health/scheduler` + `GET /api/v1/scheduler/{status,jobs,jobs/:id/runs,missed-runs}`
+- **GATE — proven by chaos tests** (`scheduler.reliability.test.ts`, all DB-backed):
+  no double-execution across concurrent workers, idempotency, lock steal-on-expiry,
+  dead-lettering, anchored single-fire per slot, skipped-slot detection, watchdog staleness
+
+Not yet built: incidents engine (Phase 6), alerting delivery (Phase 7), dashboard
+(Phase 8), security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
+Alerts are currently *recorded* (`alerts` table); Phase 7 delivers them.
 
 ## Getting started
 
@@ -114,12 +137,16 @@ src/
   lib/            logger, db, redis, cron, ssrf, crypto, errors, shutdown
   domain/         enums + entity types (mirrored from the DB)
   repositories/   SQL data access, one module per aggregate
-  services/       business logic (target, audit, …)
-  http/           express app, middleware, routes, controllers
-  scheduler/      scheduler process entrypoint   (Phase 5)
-  workers/        health-check worker entrypoint  (Phase 4/5)
-  watchdog/       independent dead-man's-switch   (Phase 5)
-  tests/          shared test setup
+  services/
+    target/       target CRUD + validation
+    audit/        immutable audit trail
+    health-check/ executor, validator, failure classifier, auth
+    scheduler/    scheduler, distributed lock, job runner, missed-run detector
+  http/           express app, middleware, routes
+  scheduler/      scheduler process entrypoint
+  workers/        BullMQ worker entrypoint (idle stub — the horizontal-scale path)
+  watchdog/       independent dead-man's-switch process
+  tests/          shared setup + fixtures
 migrations/       node-pg-migrate SQL migrations
 ```
 

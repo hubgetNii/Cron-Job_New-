@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { checkDbHealth } from '../../lib/db.js';
 import { checkRedisHealth } from '../../lib/redis.js';
 import { appInfo } from '../../lib/version.js';
+import { getSchedulerStatus } from '../../services/scheduler/scheduler-status.service.js';
 
 export const healthRouter: Router = Router();
 
@@ -42,13 +43,21 @@ healthRouter.get('/health', async (_req: Request, res: Response) => {
 });
 
 /**
- * Scheduler-specific health. Populated in Phase 5 (cron engine) with last cron
- * tick time, active job count, queue depth, worker count and missed-run count.
+ * Scheduler-specific health: last cron tick, its age, active jobs, queue depth
+ * and the cumulative missed-run count (see vault: "Observability and
+ * Meta-Monitoring"). Served from the database so the API process reports on a
+ * scheduler running in a separate container.
  */
-healthRouter.get('/health/scheduler', (_req: Request, res: Response) => {
-  res.status(503).json({
-    status: 'not_implemented',
-    phase: 5,
-    message: 'Scheduler health is reported once the cron engine lands (roadmap Phase 5).',
+healthRouter.get('/health/scheduler', async (_req: Request, res: Response) => {
+  const status = await getSchedulerStatus();
+  res.status(status.health === 'ok' ? 200 : 503).json({
+    status: status.health,
+    lastTickAt: status.heartbeat?.lastTickAt ?? null,
+    lastTickAgeMs: status.heartbeat?.ageMs ?? null,
+    graceMs: status.graceMs,
+    activeJobCount: status.heartbeat?.activeJobCount ?? null,
+    queueDepth: status.heartbeat?.queueDepth ?? null,
+    instanceId: status.heartbeat?.instanceId ?? null,
+    missedRunTotal: status.missedRunTotal,
   });
 });

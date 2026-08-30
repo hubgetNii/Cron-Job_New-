@@ -8,6 +8,7 @@ import { requestContext } from './middleware/request-context.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { healthRouter } from './routes/health.routes.js';
 import { targetRouter } from './routes/target.routes.js';
+import { schedulerRouter } from './routes/scheduler.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -45,6 +46,7 @@ export function createApp(): Express {
   // API surface, added phase by phase under /api/v1.
   const api = express.Router();
   api.use(targetRouter);
+  api.use(schedulerRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);
