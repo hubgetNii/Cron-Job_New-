@@ -42,6 +42,7 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run migrate up
+      # Migrate the test database from process.env (no .env file in CI).
+      - run: npx node-pg-migrate -j sql -m migrations up
       - run: npm test
       - run: npm run build

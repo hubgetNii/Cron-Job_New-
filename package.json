@@ -24,7 +24,8 @@
     "migrate": "node-pg-migrate -j sql -m migrations --envPath .env",
     "migrate:up": "npm run migrate -- up",
     "migrate:down": "npm run migrate -- down",
-    "migrate:create": "node-pg-migrate -j sql -m migrations create"
+    "migrate:create": "node-pg-migrate -j sql -m migrations create",
+    "db:test:setup": "docker compose exec -T postgres psql -U cronmon -d cronmon -c \"CREATE DATABASE cronmon_test\" || true && DATABASE_URL=postgres://cronmon:cronmon@localhost:5433/cronmon_test node-pg-migrate -j sql -m migrations up"
   },
   "dependencies": {
     "bullmq": "^5.34.5",
