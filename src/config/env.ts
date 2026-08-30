@@ -44,9 +44,11 @@ const EnvSchema = z.object({
 
   // AI intelligence (Phase 10). Absent → AI features report "not configured".
   ANTHROPIC_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default('claude-sonnet-5'),
+  AI_MODEL: z.string().default('claude-opus-5'),
+  AI_ENABLED: BoolFromString.default('true'),
   ANOMALY_BASELINE_DAYS: z.coerce.number().int().positive().default(30),
   ANOMALY_Z_THRESHOLD: z.coerce.number().positive().default(3),
+  ANOMALY_MIN_BASELINE_SAMPLES: z.coerce.number().int().positive().default(30),
 
   // Reporting (Phase 11).
   SLA_REPORT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),

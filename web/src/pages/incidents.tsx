@@ -6,6 +6,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { IncidentStatusBadge, SeverityBadge } from '@/components/status-badge';
+import { IncidentAiPanel } from '@/components/incident-ai-panel';
 
 function fmtDuration(secs: number | null): string {
   if (secs == null) return '—';
@@ -146,6 +147,8 @@ export function IncidentsPage() {
                   </dd>
                 </div>
               </dl>
+
+              <IncidentAiPanel incidentId={detail.data.id} />
 
               {detail.data.resolution && (
                 <div className="rounded-md border border-[var(--color-border)] p-3 text-sm">

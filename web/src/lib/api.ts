@@ -1,10 +1,13 @@
 import { authStore, type AuthUser } from './auth';
 import type {
+  AiInsight,
   Alert,
+  AnomalySignal,
   CronJobRun,
   DashboardSummary,
   HealthCheckRow,
   Incident,
+  IncidentAnalysis,
   MissedRun,
   PerfBucket,
   Target,
@@ -136,6 +139,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ note }),
     }).then((r) => r.data),
+
+  aiStatus: () => req<Wrapped<{ configured: boolean }>>('/ai/status').then((r) => r.data),
+  incidentInsights: (id: string) =>
+    req<Wrapped<AiInsight[]>>(`/incidents/${id}/ai`).then((r) => r.data),
+  analyzeIncident: (id: string) =>
+    req<Wrapped<IncidentAnalysis>>(`/incidents/${id}/ai/analyze`, { method: 'POST' }).then(
+      (r) => r.data,
+    ),
+  anomalies: (hours = 24) =>
+    req<Wrapped<AiInsight[]>>(`/anomalies?hours=${hours}`).then((r) => r.data),
+  targetAnomalies: (id: string) =>
+    req<Wrapped<AnomalySignal[]>>(`/targets/${id}/anomalies`).then((r) => r.data),
 
   login: (email: string, password: string) =>
     req<Wrapped<LoginResponse>>('/auth/login', {

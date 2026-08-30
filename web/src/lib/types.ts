@@ -153,6 +153,54 @@ export interface Target {
   updatedAt: string;
 }
 
+export type AiInsightKind =
+  | 'failure_classification'
+  | 'root_cause'
+  | 'incident_summary'
+  | 'latency_anomaly'
+  | 'error_rate_anomaly';
+
+export interface AiInsight {
+  id: string;
+  entityType: 'incident' | 'target';
+  entityId: string;
+  kind: AiInsightKind;
+  assistive: true;
+  confidence: number | null;
+  model: string;
+  content: unknown;
+  createdAt: string;
+}
+
+export interface IncidentAnalysis {
+  model: string;
+  classification: {
+    assistive: true;
+    classification: string;
+    confidence: number;
+    reasoning: string;
+  };
+  rootCause: {
+    assistive: true;
+    hypotheses: { cause: string; confidence: number; evidence: string }[];
+    recommendedNextStep: string;
+    overallConfidence: number;
+  };
+  summary: { assistive: true; summary: string; impact: string };
+}
+
+export interface AnomalySignal {
+  targetId: string;
+  targetName: string;
+  kind: 'latency' | 'error_rate';
+  metric: string;
+  baseline: number;
+  observed: number;
+  zScore: number | null;
+  windowMinutes: number;
+  note: string;
+}
+
 export interface TestOutcome {
   status: HealthStatus;
   httpStatus: number | null;

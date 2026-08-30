@@ -1,7 +1,14 @@
 import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, CheckCircle2, Siren, Timer, Banknote, XCircle } from 'lucide-react';
-import { useIncidents, usePerformance, useSummary, useTargetBoard } from '@/lib/queries';
+import { Activity, CheckCircle2, Siren, Timer, Banknote, XCircle, Sparkles } from 'lucide-react';
+import {
+  useAnomalies,
+  useIncidents,
+  usePerformance,
+  useSummary,
+  useTargetBoard,
+} from '@/lib/queries';
+import { Badge } from '@/components/ui/badge';
 import { StatTile } from '@/components/stat-tile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +32,7 @@ export function OverviewPage() {
   const perf = usePerformance(6);
   const board = useTargetBoard();
   const incidents = useIncidents('?status=OPEN&limit=8');
+  const anomalies = useAnomalies(24);
 
   const s = summary.data;
 
@@ -131,6 +139,49 @@ export function OverviewPage() {
           </CardContent>
         </Card>
       </div>
+
+      {(anomalies.data ?? []).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="size-4 text-[var(--color-brand)]" />
+              Anomalies · last 24h
+              <Badge
+                className="border-[var(--color-brand)] text-[var(--color-brand)]"
+                title="Statistical signal, advisory only. Never opens an incident or changes a target."
+              >
+                ASSISTIVE
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(anomalies.data ?? []).map((a) => {
+              const c = a.content as {
+                targetName?: string;
+                kind?: string;
+                note?: string;
+              };
+              return (
+                <div
+                  key={a.id}
+                  className="flex items-start gap-3 rounded-md border border-[var(--color-border)]/60 p-2 text-sm"
+                >
+                  <Badge className="border-[var(--color-degraded)] text-[var(--color-degraded)]">
+                    {c.kind === 'error_rate' ? 'error rate' : 'latency'}
+                  </Badge>
+                  <div className="min-w-0">
+                    <p className="font-medium">{c.targetName ?? 'target'}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">{c.note}</p>
+                  </div>
+                  <span className="ml-auto shrink-0 text-xs text-[var(--color-text-faint)]">
+                    {relTime(a.createdAt)}
+                  </span>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

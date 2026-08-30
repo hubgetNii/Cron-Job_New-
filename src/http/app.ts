@@ -17,6 +17,7 @@ import { alertRouter } from './routes/alert.routes.js';
 import { dashboardRouter } from './routes/dashboard.routes.js';
 import { configRequestRouter } from './routes/config-request.routes.js';
 import { statusRouter } from './routes/status.routes.js';
+import { aiRouter } from './routes/ai.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -77,6 +78,7 @@ export function createApp(): Express {
   api.use(incidentRouter);
   api.use(alertRouter);
   api.use(dashboardRouter);
+  api.use(aiRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

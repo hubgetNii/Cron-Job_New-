@@ -48,6 +48,34 @@ export const useHealthChecks = (id: string | null) =>
     enabled: id != null,
   });
 
+export const useAiStatus = () =>
+  useQuery({ queryKey: ['ai-status'], queryFn: api.aiStatus, staleTime: 60_000 });
+
+export const useIncidentInsights = (id: string | null) =>
+  useQuery({
+    queryKey: ['incident-insights', id],
+    queryFn: () => api.incidentInsights(id!),
+    enabled: id != null,
+    refetchInterval: LIVE,
+  });
+
+export const useAnomalies = (hours = 24) =>
+  useQuery({
+    queryKey: ['anomalies', hours],
+    queryFn: () => api.anomalies(hours),
+    refetchInterval: LIVE,
+  });
+
+export function useAnalyzeIncident(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.analyzeIncident(id!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['incident-insights', id] });
+    },
+  });
+}
+
 export function useTargetActions() {
   const qc = useQueryClient();
   const invalidate = () => {
