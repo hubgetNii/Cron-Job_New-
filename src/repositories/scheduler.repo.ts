@@ -128,13 +128,14 @@ export async function insertHealthCheckResult(
     outcome: HealthCheckOutcome;
   },
   client?: SqlRunner,
-): Promise<void> {
+): Promise<string | null> {
   const { outcome } = input;
-  await runner(client).query(
+  const { rows } = await runner(client).query<{ id: string }>(
     `INSERT INTO health_check_results
        (api_id, job_run_id, checked_at, status, http_status, response_time_ms, error_type, error_message, validation_result, response_code)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     ON CONFLICT (job_run_id) WHERE job_run_id IS NOT NULL DO NOTHING`,
+     ON CONFLICT (job_run_id) WHERE job_run_id IS NOT NULL DO NOTHING
+     RETURNING id`,
     [
       input.apiId,
       input.jobRunId,
@@ -148,6 +149,7 @@ export async function insertHealthCheckResult(
       outcome.httpStatus === null ? null : String(outcome.httpStatus),
     ],
   );
+  return rows[0]?.id ?? null;
 }
 
 // ── target_schedule_state ──────────────────────────────────────────────────
@@ -163,12 +165,22 @@ export interface TargetScheduleState {
   updatedAt: Date;
 }
 
+/**
+ * Updates the per-target recovery counters. Only a clean `UP` counts toward
+ * recovery (see vault: "Incident Lifecycle" — N consecutive *successful*
+ * checks); `DEGRADED` and `UNKNOWN` break the streak without escalating a
+ * DOWN, and only `DOWN` grows the failure count.
+ */
 export async function recordRunOutcome(
   input: { targetId: string; scheduledSlot: Date; status: HealthStatus },
   client?: SqlRunner,
-): Promise<void> {
-  const healthy = input.status === 'UP' || input.status === 'DEGRADED';
-  await runner(client).query(
+): Promise<{ consecutiveSuccesses: number; consecutiveFailures: number }> {
+  const isUp = input.status === 'UP';
+  const isDown = input.status === 'DOWN';
+  const { rows } = await runner(client).query<{
+    consecutive_successes: number;
+    consecutive_failures: number;
+  }>(
     `INSERT INTO target_schedule_state
        (target_id, last_expected_run_at, last_actual_run_at, last_status,
         consecutive_successes, consecutive_failures)
@@ -178,9 +190,16 @@ export async function recordRunOutcome(
        last_actual_run_at = now(),
        last_status = EXCLUDED.last_status,
        consecutive_successes = CASE WHEN $6 THEN target_schedule_state.consecutive_successes + 1 ELSE 0 END,
-       consecutive_failures  = CASE WHEN $6 THEN 0 ELSE target_schedule_state.consecutive_failures + 1 END`,
-    [input.targetId, input.scheduledSlot, input.status, healthy ? 1 : 0, healthy ? 0 : 1, healthy],
+       consecutive_failures  = CASE WHEN $7 THEN target_schedule_state.consecutive_failures + 1
+                                    WHEN $6 THEN 0
+                                    ELSE target_schedule_state.consecutive_failures END
+     RETURNING consecutive_successes, consecutive_failures`,
+    [input.targetId, input.scheduledSlot, input.status, isUp ? 1 : 0, isDown ? 1 : 0, isUp, isDown],
   );
+  return {
+    consecutiveSuccesses: rows[0]?.consecutive_successes ?? 0,
+    consecutiveFailures: rows[0]?.consecutive_failures ?? 0,
+  };
 }
 
 export async function bumpMissedRunCount(targetId: string, by: number): Promise<void> {

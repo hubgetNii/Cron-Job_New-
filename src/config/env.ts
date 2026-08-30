@@ -36,6 +36,11 @@ const EnvSchema = z.object({
   MAX_GLOBAL_CONCURRENT_CHECKS: z.coerce.number().int().positive().default(50),
   DEFAULT_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
 
+  // Incident state machine (see vault: "Incident Lifecycle").
+  INCIDENT_RECOVERY_STREAK: z.coerce.number().int().min(1).default(2),
+  FLAPPING_THRESHOLD: z.coerce.number().int().min(2).default(4),
+  FLAPPING_WINDOW_MINUTES: z.coerce.number().int().min(1).default(10),
+
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().max(65_535).default(587),
   SMTP_USER: z.string().optional(),

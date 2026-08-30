@@ -5,6 +5,7 @@ import type { MonitoredApi } from '../../domain/target.js';
 import type { HealthCheckOutcome } from '../../domain/health-check.js';
 import { executeCheck, type ExecuteOptions } from '../health-check/executor.service.js';
 import { acquireLock, releaseLock } from './lock.service.js';
+import { processCheckOutcome } from '../incident/state-machine.service.js';
 import {
   claimJobRun,
   completeJobRun,
@@ -86,9 +87,22 @@ export async function runScheduledCheck(
     try {
       const outcome = await execute(target);
       await withTransaction(async (client) => {
-        await insertHealthCheckResult({ apiId: target.id, jobRunId: runId, outcome }, client);
-        await recordRunOutcome(
+        const checkId = await insertHealthCheckResult(
+          { apiId: target.id, jobRunId: runId, outcome },
+          client,
+        );
+        const counters = await recordRunOutcome(
           { targetId: target.id, scheduledSlot, status: outcome.status },
+          client,
+        );
+        await processCheckOutcome(
+          {
+            target,
+            status: outcome.status,
+            failureType: outcome.failureType,
+            checkId,
+            consecutiveSuccesses: counters.consecutiveSuccesses,
+          },
           client,
         );
         await completeJobRun(claimId, 'SUCCESS', client);

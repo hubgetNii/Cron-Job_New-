@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { healthRouter } from './routes/health.routes.js';
 import { targetRouter } from './routes/target.routes.js';
 import { schedulerRouter } from './routes/scheduler.routes.js';
+import { incidentRouter } from './routes/incident.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -47,6 +48,7 @@ export function createApp(): Express {
   const api = express.Router();
   api.use(targetRouter);
   api.use(schedulerRouter);
+  api.use(incidentRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

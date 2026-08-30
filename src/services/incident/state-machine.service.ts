@@ -1,0 +1,187 @@
+import { env } from '../../config/index.js';
+import { componentLogger } from '../../lib/logger.js';
+import type { SqlRunner } from '../../lib/db.js';
+import type { MonitoredApi } from '../../domain/target.js';
+import type { Incident } from '../../domain/incident.js';
+import type { CheckFailureType, HealthStatus, Severity } from '../../domain/enums.js';
+import {
+  countStatusTransitions,
+  escalateIncident,
+  findActiveIncident,
+  incrementFailureCount,
+  markIncidentFlapping,
+  openIncident,
+  resolveIncident,
+} from '../../repositories/incidents.repo.js';
+import { recordAlert } from '../../repositories/scheduler.repo.js';
+
+const log = componentLogger('incident');
+
+export interface CheckContext {
+  target: MonitoredApi;
+  status: HealthStatus;
+  failureType: CheckFailureType | null;
+  checkId: string | null;
+  /** Recovery counters after this check was recorded. */
+  consecutiveSuccesses: number;
+}
+
+export type IncidentTransition =
+  | { kind: 'opened'; incident: Incident }
+  | { kind: 'failure_recorded'; incident: Incident }
+  | { kind: 'flapping_detected'; incident: Incident }
+  | { kind: 'resolved'; incident: Incident }
+  | { kind: 'noop' };
+
+const DEGRADE: Record<Severity, Severity> = {
+  CRITICAL: 'HIGH',
+  HIGH: 'MEDIUM',
+  MEDIUM: 'LOW',
+  LOW: 'LOW',
+};
+
+async function checkFlapping(
+  target: MonitoredApi,
+  active: Incident | null,
+  client: SqlRunner,
+): Promise<Incident | null> {
+  const transitions = await countStatusTransitions(
+    target.id,
+    env().FLAPPING_WINDOW_MINUTES,
+    client,
+  );
+  if (transitions < env().FLAPPING_THRESHOLD) return null;
+  if (active && active.incidentType !== 'FLAPPING') {
+    await markIncidentFlapping(active.id, client);
+    await recordAlert(
+      {
+        alertType: 'FLAPPING_DETECTED',
+        channel: 'WEBHOOK',
+        recipient: 'ops',
+        apiId: target.id,
+        incidentId: active.id,
+        errorMessage: `"${target.name}" changed state ${transitions}× in ${env().FLAPPING_WINDOW_MINUTES}m`,
+      },
+      client,
+    );
+    return { ...active, incidentType: 'FLAPPING' };
+  }
+  return active;
+}
+
+/**
+ * Drives the incident state machine for one recorded check result (see vault:
+ * "Incident Lifecycle"). Runs inside the job runner's transaction so a result
+ * and the incident change it causes commit together.
+ *
+ * - UP → DOWN: opens an OUTAGE incident (the DB's partial unique index makes
+ *   "never duplicate" a hard guarantee, not a race).
+ * - UP → DEGRADED: opens a lower-severity DEGRADATION incident.
+ * - DOWN → UP: auto-resolves only after `INCIDENT_RECOVERY_STREAK` consecutive
+ *   clean UP checks — deterministic, and applied uniformly to money-moving
+ *   targets (Rule 18).
+ * - Rapid oscillation is surfaced as a distinct FLAPPING incident type rather
+ *   than a storm of open/close alerts (Rule 23).
+ */
+export async function processCheckOutcome(
+  ctx: CheckContext,
+  client: SqlRunner,
+): Promise<IncidentTransition> {
+  const { target, status, failureType, checkId } = ctx;
+  let active = await findActiveIncident(target.id, client);
+
+  if (status === 'UNKNOWN') {
+    // Ambiguous — never opens, never closes. A degraded/down streak is unaffected.
+    return { kind: 'noop' };
+  }
+
+  if (status === 'UP') {
+    if (!active) return { kind: 'noop' };
+    if (ctx.consecutiveSuccesses >= env().INCIDENT_RECOVERY_STREAK) {
+      const resolved = await resolveIncident(active.id, null, client);
+      if (!resolved) return { kind: 'noop' };
+      await recordAlert(
+        {
+          alertType: 'API_RECOVERED',
+          channel: 'WEBHOOK',
+          recipient: 'ops',
+          apiId: target.id,
+          incidentId: resolved.id,
+          errorMessage: `Recovered after ${resolved.durationSeconds ?? '?'}s`,
+        },
+        client,
+      );
+      log.info(
+        {
+          incident: resolved.incidentNumber,
+          targetId: target.id,
+          durationSeconds: resolved.durationSeconds,
+        },
+        'incident auto-resolved',
+      );
+      return { kind: 'resolved', incident: resolved };
+    }
+    return { kind: 'noop' }; // waiting for the streak to complete
+  }
+
+  // status is DOWN or DEGRADED from here.
+  const isDown = status === 'DOWN';
+
+  if (!active) {
+    const incident = await openIncident(
+      {
+        apiId: target.id,
+        incidentType: isDown ? 'OUTAGE' : 'DEGRADATION',
+        severity: isDown ? target.severityDefault : DEGRADE[target.severityDefault],
+        endpointClassSnapshot: target.endpointClass,
+        isMoneyMovingSnapshot: target.isMoneyMoving,
+        detectedByCheckId: checkId,
+        failureType,
+      },
+      client,
+    );
+    await recordAlert(
+      {
+        alertType: isDown ? 'API_DOWN' : 'API_DEGRADED',
+        channel: 'WEBHOOK',
+        recipient: 'ops',
+        apiId: target.id,
+        incidentId: incident.id,
+        errorMessage: `${incident.incidentNumber} opened (${status}, ${failureType ?? 'n/a'})`,
+      },
+      client,
+    );
+    log.warn(
+      {
+        incident: incident.incidentNumber,
+        targetId: target.id,
+        status,
+        severity: incident.severity,
+      },
+      'incident opened',
+    );
+    const flapped = await checkFlapping(target, incident, client);
+    return flapped && flapped.incidentType === 'FLAPPING' && incident.incidentType !== 'FLAPPING'
+      ? { kind: 'flapping_detected', incident: flapped }
+      : { kind: 'opened', incident };
+  }
+
+  await incrementFailureCount(active.id, failureType, client);
+
+  // A DOWN check while a DEGRADATION incident is open promotes it to a full
+  // outage at the target's real severity.
+  if (isDown && active.incidentType === 'DEGRADATION') {
+    await escalateIncident(active.id, 0, client);
+    await client.query(
+      `UPDATE incidents SET incident_type = 'OUTAGE', severity = $2 WHERE id = $1`,
+      [active.id, target.severityDefault],
+    );
+    active = { ...active, incidentType: 'OUTAGE', severity: target.severityDefault };
+  }
+
+  const flapped = await checkFlapping(target, active, client);
+  if (flapped && flapped.incidentType === 'FLAPPING' && active.incidentType !== 'FLAPPING') {
+    return { kind: 'flapping_detected', incident: flapped };
+  }
+  return { kind: 'failure_recorded', incident: flapped ?? active };
+}

@@ -12,8 +12,8 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–5 complete.** The cron engine — the core deliverable — is built and its
-reliability guarantees are proven by the GATE chaos tests.
+**Phases 1–6 complete.** The cron engine (the core deliverable) passed its GATE chaos
+tests; the incident state machine now sits on top of it.
 
 Phase 1:
 
@@ -88,9 +88,24 @@ Phase 5 — **the cron engine**:
   no double-execution across concurrent workers, idempotency, lock steal-on-expiry,
   dead-lettering, anchored single-fire per slot, skipped-slot detection, watchdog staleness
 
-Not yet built: incidents engine (Phase 6), alerting delivery (Phase 7), dashboard
-(Phase 8), security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
-Alerts are currently *recorded* (`alerts` table); Phase 7 delivers them.
+Phase 6 — **incident engine** (`services/incident/`):
+
+- State machine runs inside the job runner's transaction, so a check result and the
+  incident change it causes commit together
+- `UP → DOWN` opens an OUTAGE; `UP → DEGRADED` opens a lower-severity DEGRADATION;
+  a `DOWN` while degraded promotes the incident to full severity
+- `DOWN → UP` auto-resolves **only** after `INCIDENT_RECOVERY_STREAK` (default 2) clean
+  `UP` checks — deterministic, applied uniformly to money-moving targets (Rule 18)
+- The DB's partial unique index makes "one active incident per target" a hard guarantee
+- **Flapping guard** (Rule 23): rapid oscillation (default ≥4 state changes / 10 min,
+  counted from `health_check_results`) is surfaced as a distinct `FLAPPING` incident type
+  + one `FLAPPING_DETECTED` alert, not a storm of open/close alerts
+- `GET /api/v1/incidents`, `GET /incidents/:id`, `POST /:id/acknowledge`, `POST /:id/resolve`
+  (resolution note required), `PATCH /:id/root-cause` — all audit-logged
+
+Not yet built: alerting delivery + escalation (Phase 7), dashboard (Phase 8), security
+hardening (Phase 9), AI (Phase 10), reporting (Phase 11). Alerts are *recorded* in the
+`alerts` table; Phase 7 delivers them and drives escalation tiers.
 
 ## Getting started
 
