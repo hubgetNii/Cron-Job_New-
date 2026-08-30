@@ -5,6 +5,11 @@ coverage/
 .env
 .env.*
 !.env.example
+# secrets — service-account keys belong outside the repo; never commit them
+*firebase-adminsdk*.json
+*service-account*.json
+*serviceAccount*.json
+*.pem
 .DS_Store
 .vscode/
 .idea/
