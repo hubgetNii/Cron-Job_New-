@@ -12,12 +12,15 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–9 complete.** The cron engine (the core deliverable) passed its GATE chaos
-tests; incidents, tiered escalation, alert delivery, a live React dashboard, and
-authentication + RBAC + four-eyes approval sit on top.
+**All 11 roadmap phases complete.** The cron engine (the core deliverable) passed its
+GATE chaos tests; incidents, tiered escalation, alert delivery, a live React dashboard,
+authentication + RBAC + four-eyes approval, advisory AI intelligence, and SLA /
+compliance reporting with a public status page sit on top. 153 tests, 0 vulnerabilities.
 
 The dashboard is a separate app in [`web/`](./web) — Vite + React + Tailwind v4 + shadcn/ui,
 polling this API every 10s. `cd web && npm run dev`.
+
+**Trying it against live endpoints:** [`docs/testing-with-real-endpoints.md`](./docs/testing-with-real-endpoints.md).
 
 Phase 1:
 
@@ -156,7 +159,38 @@ Phase 9 — **security & compliance**:
 The dashboard has a login page, stores tokens in `localStorage`, refreshes transparently on
 401, and an **Approvals** page for the four-eyes queue.
 
-Not yet built: AI (Phase 10), reporting (Phase 11).
+Phase 10 — **AI intelligence (advisory only)**:
+
+- Migration `1725000010000` (`ai_insights`) — every row carries `assistive = true` as a
+  hard DB `CHECK`. The `AiClient` seam exposes only `analyze()`; there is **no code path**
+  from AI to a target, incident or alert mutation
+- **Analysis** (`services/ai/analysis.service.ts`) — failure classification, ranked
+  root-cause hypotheses (evidence + confidence each), and an incident summary, via
+  `messages.parse()` with a zod structured-output schema. Each is stored as an advisory
+  insight and returned labelled `ASSISTIVE`
+- **Anomaly detection** (`services/ai/anomaly.service.ts`) — **pure statistics, no LLM**:
+  z-score of the last hour's latency vs a 30-day rolling baseline, plus an error-rate
+  delta. Runs on a throttled 5-min scan in the scheduler; never opens an incident
+- `GET /incidents/:id/ai`, `POST /incidents/:id/ai/analyze` (OPERATOR/ADMIN, 503 if no
+  key), `GET /targets/:id/anomalies`, `GET /anomalies`, `GET /ai/status`
+- Dashboard: incident-drawer AI panel (ASSISTIVE badge + confidence bars), overview
+  anomalies card
+
+Phase 11 — **SLA reporting, compliance export, status page**:
+
+- Migration `1725000011000` — `sla_reports` gains `period_kind` (`rolling_30d` /
+  `calendar_month`), `excluded_seconds`, and check counts
+- **SLA computation** (`services/reporting/sla.service.ts`) — count-based uptime; checks
+  inside an approved maintenance window are excluded from the breach math but their
+  downtime is **still recorded** (`excluded_seconds`), never deleted. `runSlaReports()`
+  upserts a rolling-30d + current calendar-month row per target, idempotently, every
+  `SLA_REPORT_INTERVAL_MINUTES` in the scheduler process
+- **Compliance export** — `GET /reports/compliance?from=&to=&format=json|csv` (incidents,
+  SLA outcomes, maintenance windows, audit-action summary); `COMPLIANCE`/`MANAGEMENT`/`ADMIN`
+- `GET /sla/summary`, `GET /sla/:targetId`, `POST /sla/refresh`
+- **Public status page** — `GET /api/v1/status`, unauthenticated, `STATUS_PAGE_ENABLED`-gated,
+  sanitised (no URLs / ids / failure detail). Dashboard renders it at `/status` (no login);
+  `/app/sla` shows per-target uptime and the compliance export
 
 ## Getting started
 
@@ -208,12 +242,17 @@ src/
     audit/        immutable audit trail
     health-check/ executor, validator, failure classifier, auth
     scheduler/    scheduler, distributed lock, job runner, missed-run detector
+    incident/     incident state machine
+    alert/        channels, escalation, delivery, alert runner
+    ai/           advisory analysis + statistical anomaly detection (Phase 10)
+    reporting/    SLA computation, report runner, compliance export (Phase 11)
   http/           express app, middleware, routes
-  scheduler/      scheduler process entrypoint
+  scheduler/      scheduler process entrypoint (cron + alerts + SLA reports)
   workers/        BullMQ worker entrypoint (idle stub — the horizontal-scale path)
   watchdog/       independent dead-man's-switch process
   tests/          shared setup + fixtures
 migrations/       node-pg-migrate SQL migrations
+docs/             runbooks (see testing-with-real-endpoints.md)
 ```
 
 Layering is enforced: **Controller → Service → Repository → Database**. Business logic
