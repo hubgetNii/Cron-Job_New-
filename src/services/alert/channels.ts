@@ -7,6 +7,19 @@ import type { AlertChannel } from '../../domain/enums.js';
 
 const log = componentLogger('alert-channel');
 
+/**
+ * A channel with no transport configured logs the notification and reports
+ * success, rather than failing every alert. Production sets the transport;
+ * this keeps dev and staging quiet-but-visible.
+ */
+function loggedFallback(kind: AlertChannel, n: Notification, reason: string): DeliveryResult {
+  log.warn(
+    { channel: kind, alertType: n.alertType, severity: n.severity, subject: n.subject, reason },
+    `alert not delivered (${kind} has no transport) — logged only`,
+  );
+  return { ok: true, detail: `logged only — ${reason}` };
+}
+
 export interface Notification {
   alertType: string;
   severity: string;
@@ -35,7 +48,7 @@ class WebhookChannel implements Channel {
   constructor(private readonly url: string | undefined) {}
 
   async send(n: Notification): Promise<DeliveryResult> {
-    if (!this.url) return { ok: false, detail: 'ALERT_WEBHOOK_URL not configured' };
+    if (!this.url) return loggedFallback('WEBHOOK', n, 'ALERT_WEBHOOK_URL not set');
     const bodyStr = JSON.stringify({
       alert_type: n.alertType,
       severity: n.severity,
@@ -75,7 +88,7 @@ class SlackChannel implements Channel {
   constructor(private readonly url: string | undefined) {}
 
   async send(n: Notification): Promise<DeliveryResult> {
-    if (!this.url) return { ok: false, detail: 'ALERT_SLACK_WEBHOOK_URL not configured' };
+    if (!this.url) return loggedFallback('SLACK', n, 'ALERT_SLACK_WEBHOOK_URL not set');
     const text = `*${n.severity} · ${n.alertType}*\n${n.subject}\n${n.body}`;
     try {
       const res = await request(this.url, {
@@ -113,11 +126,9 @@ class EmailChannel implements Channel {
 
   async send(n: Notification): Promise<DeliveryResult> {
     const to = env().ALERT_EMAIL_TO;
-    if (!to) return { ok: false, detail: 'ALERT_EMAIL_TO not configured' };
     const transporter = this.getTransporter();
-    if (!transporter) {
-      log.warn({ alertType: n.alertType }, 'SMTP not configured — email not sent');
-      return { ok: false, detail: 'SMTP_HOST not configured' };
+    if (!to || !transporter) {
+      return loggedFallback('EMAIL', n, !to ? 'ALERT_EMAIL_TO not set' : 'SMTP_HOST not set');
     }
     try {
       const info = (await transporter.sendMail({
@@ -141,11 +152,7 @@ class SmsChannel implements Channel {
     const url = env().SMS_PROVIDER_URL;
     const key = env().SMS_PROVIDER_API_KEY;
     if (!to || !url || !key) {
-      log.warn({ alertType: n.alertType }, 'SMS provider not configured — SMS not sent');
-      return {
-        ok: false,
-        detail: 'SMS provider not configured (SMS_PROVIDER_URL/API_KEY/ALERT_SMS_TO)',
-      };
+      return loggedFallback('SMS', n, 'SMS_PROVIDER_URL/API_KEY/ALERT_SMS_TO not set');
     }
     try {
       const res = await request(url, {

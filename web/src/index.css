@@ -1,0 +1,75 @@
+@import 'tailwindcss';
+
+/*
+  The dashboard commits to a single dark look — it lives next to the black-hole
+  hero and an ops console reads better dark. Tokens are painted explicitly.
+  Chart / status colours are the validated dataviz reference palette.
+*/
+@theme {
+  --color-bg: #0a0a0c;
+  --color-surface-1: #141417;
+  --color-surface-2: #1c1c20;
+  --color-border: #2a2a30;
+  --color-text: #f4f4f5;
+  --color-text-muted: #a1a1aa;
+  --color-text-faint: #71717a;
+
+  --color-brand: #3987e5;
+  --color-brand-fg: #eaf2fd;
+
+  /* status palette — fixed, always paired with an icon + label */
+  --color-up: #0ca30c;
+  --color-degraded: #fab219;
+  --color-down: #d03b3b;
+  --color-unknown: #71717a;
+
+  /* categorical / sequential (dark steps) */
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  --radius: 0.625rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand) 40%, transparent);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 999px;
+  }
+}
+
+/* Recharts overrides so the grid/axes stay recessive */
+.recharts-cartesian-grid line {
+  stroke: var(--color-border);
+  stroke-opacity: 0.5;
+}
+.recharts-text {
+  fill: var(--color-text-faint);
+  font-size: 11px;
+}

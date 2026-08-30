@@ -12,8 +12,11 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–7 complete.** The cron engine (the core deliverable) passed its GATE chaos
-tests; incidents, tiered escalation and alert delivery sit on top of it.
+**Phases 1–8 complete.** The cron engine (the core deliverable) passed its GATE chaos
+tests; incidents, tiered escalation, alert delivery and a live React dashboard sit on top.
+
+The dashboard is a separate app in [`web/`](./web) — Vite + React + Tailwind v4 + shadcn/ui,
+polling this API every 10s. `cd web && npm run dev`.
 
 Phase 1:
 
@@ -118,8 +121,18 @@ Phase 7 — **alerting & escalation** (`services/alert/`, runs in the scheduler 
   channel+recipient that was notified about it
 - `GET /api/v1/alerts`, `GET/POST/PUT /api/v1/escalation-policies`, `GET /api/v1/on-call-schedules`
 
-Not yet built: dashboard (Phase 8), security hardening (Phase 9), AI (Phase 10),
-reporting (Phase 11).
+Phase 8 — **dashboard** ([`web/`](./web)):
+
+- Read APIs: `GET /api/v1/dashboard/{summary,performance,targets}`, `GET /api/v1/health-checks/:id`
+- React 19 + Vite + Tailwind v4 + shadcn/ui, TanStack Query with a 10s poll (live view)
+- Pages: Overview (stat tiles, latency chart, open incidents, money-moving targets),
+  Targets (status board with enable/disable + ad-hoc **Test**), Incidents (list + detail
+  drawer with acknowledge / resolve), Scheduler (heartbeat, job runs, missed runs), Alerts
+- Landing page is the WebGL black-hole hero (`web/src/components/ui/blackhole-hero-section.tsx`) —
+  self-contained, no deps, degrades to a black background if WebGL is unavailable
+- Charts use Recharts with the validated dataviz palette; status colours always carry an icon + label
+
+Not yet built: security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
 
 ## Getting started
 

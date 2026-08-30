@@ -11,6 +11,7 @@ import { targetRouter } from './routes/target.routes.js';
 import { schedulerRouter } from './routes/scheduler.routes.js';
 import { incidentRouter } from './routes/incident.routes.js';
 import { alertRouter } from './routes/alert.routes.js';
+import { dashboardRouter } from './routes/dashboard.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -51,6 +52,7 @@ export function createApp(): Express {
   api.use(schedulerRouter);
   api.use(incidentRouter);
   api.use(alertRouter);
+  api.use(dashboardRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);
