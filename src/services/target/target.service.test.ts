@@ -16,7 +16,7 @@ const actor: AuditActor = { label: 'test:runner', requestId: 'test' };
 const created: string[] = [];
 
 async function makeTarget(overrides: Record<string, unknown> = {}): Promise<string> {
-  const t = await createTarget(
+  const result = await createTarget(
     {
       name: `svc-test-${Math.random().toString(36).slice(2)}`,
       endpointClass: 'payment_status',
@@ -26,8 +26,9 @@ async function makeTarget(overrides: Record<string, unknown> = {}): Promise<stri
     },
     actor,
   );
-  created.push(t.id);
-  return t.id;
+  if (result.status !== 'applied') throw new Error('expected the change to apply directly');
+  created.push(result.target.id);
+  return result.target.id;
 }
 
 describe.skipIf(!dbUp)('target service (Phase 3)', () => {

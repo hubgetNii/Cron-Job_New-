@@ -20,15 +20,37 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url().startsWith('postgres'),
   REDIS_URL: z.string().url().startsWith('redis'),
 
-  // Optional until their phase lands — kept in the schema so config is discoverable.
-  JWT_SECRET: z.string().optional(),
-  JWT_REFRESH_SECRET: z.string().optional(),
+  // Authentication (Phase 9). AUTH_ENABLED=false bypasses auth entirely — only
+  // for local dev; the API refuses to start with it off in production.
+  AUTH_ENABLED: BoolFromString.default('true'),
+  JWT_SECRET: z.string().min(16).optional(),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
+
   ENCRYPTION_KMS_KEY_ID: z.string().optional(),
   // Local key-encryption key for credential envelopes (base64, 32 bytes).
-  // Phase 9 replaces this with a KMS-backed key. Required in production.
+  // Phase 9 makes the cipher pluggable; a KMS provider replaces this key.
   CREDENTIAL_ENCRYPTION_KEY: z.string().optional(),
   // Identifies this process in distributed locks, heartbeats and job records.
   INSTANCE_ID: z.string().default('local-1'),
+
+  // Rate limiting (Phase 9). Redis-backed, per client key.
+  RATE_LIMIT_POINTS: z.coerce.number().int().positive().default(300),
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_LOGIN_POINTS: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(300),
+
+  // AI intelligence (Phase 10). Absent → AI features report "not configured".
+  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-sonnet-5'),
+  ANOMALY_BASELINE_DAYS: z.coerce.number().int().positive().default(30),
+  ANOMALY_Z_THRESHOLD: z.coerce.number().positive().default(3),
+
+  // Reporting (Phase 11).
+  SLA_REPORT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
+  STATUS_PAGE_ENABLED: BoolFromString.default('true'),
 
   SCHEDULER_LOCK_TTL_MS: z.coerce.number().int().positive().default(15_000),
   SCHEDULER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),

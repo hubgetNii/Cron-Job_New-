@@ -6,15 +6,22 @@ import { closePool } from './lib/db.js';
 import { closeRedis } from './lib/redis.js';
 import { installShutdownHandlers, onShutdown } from './lib/shutdown.js';
 import { appInfo } from './lib/version.js';
+import { bootstrapAdmin } from './services/auth/auth.service.js';
 
 const log = componentLogger('server');
 
 function main(): void {
-  const { PORT, NODE_ENV } = env();
+  const { PORT, NODE_ENV, AUTH_ENABLED } = env();
   const app = createApp();
 
   const server = app.listen(PORT, () => {
-    log.info({ ...appInfo(), port: PORT, env: NODE_ENV }, 'API server listening');
+    log.info(
+      { ...appInfo(), port: PORT, env: NODE_ENV, authEnabled: AUTH_ENABLED },
+      'API server listening',
+    );
+    if (AUTH_ENABLED) {
+      void bootstrapAdmin().catch((err: unknown) => log.error({ err }, 'admin bootstrap failed'));
+    }
   });
 
   installShutdownHandlers();

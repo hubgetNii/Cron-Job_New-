@@ -25,12 +25,30 @@ import {
   type TargetWriteModel,
 } from '../../repositories/monitored-apis.repo.js';
 import { recordAudit, type AuditActor } from '../audit/audit.service.js';
+import { env as _env } from '../../config/index.js';
+import {
+  createConfigRequest,
+  type ConfigChangeRequest,
+} from '../../repositories/config-requests.repo.js';
 import {
   createTargetSchema,
   updateTargetSchema,
   type CreateTargetPayload,
   type UpdateTargetPayload,
 } from './target.validation.js';
+
+export type TargetMutationResult =
+  | { status: 'applied'; target: MonitoredApi }
+  | { status: 'pending_approval'; request: ConfigChangeRequest };
+
+/**
+ * Money-moving target config changes go through four-eyes approval when auth is
+ * on (see vault: "User Roles"). With auth disabled (local dev) they apply
+ * directly.
+ */
+function fourEyesRequired(isMoneyMoving: boolean): boolean {
+  return isMoneyMoving && _env().AUTH_ENABLED;
+}
 
 const DEFAULT_SLA_TARGET_PERCENT = 99.95;
 const DEFAULT_RETRY: RetryConfig = {
@@ -178,13 +196,12 @@ function mergeUpdateModel(
   };
 }
 
-export async function createTarget(input: unknown, actor: AuditActor): Promise<MonitoredApi> {
-  const payload = createTargetSchema.parse(input);
-  const model = buildCreateModel(payload);
-
-  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
-  await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
-
+/** Persists a validated create model + audit row, in one transaction. */
+export async function persistTargetCreate(
+  model: TargetWriteModel,
+  actor: AuditActor,
+  note?: string,
+): Promise<MonitoredApi> {
   return withTransaction(async (client) => {
     const created = await createTargetRow(model, client);
     await recordAudit(
@@ -193,13 +210,47 @@ export async function createTarget(input: unknown, actor: AuditActor): Promise<M
         action: 'target.created',
         entityType: 'monitored_api',
         entityId: created.id,
-        summary: `Registered target "${created.name}" (${created.endpointClass}, ${created.environment})`,
+        summary:
+          `Registered target "${created.name}" (${created.endpointClass}, ${created.environment})` +
+          (note ? ` — ${note}` : ''),
         changes: { after: redact(created) },
       },
       client,
     );
     return created;
   });
+}
+
+export async function createTarget(
+  input: unknown,
+  actor: AuditActor,
+): Promise<TargetMutationResult> {
+  const payload = createTargetSchema.parse(input);
+  const model = buildCreateModel(payload);
+
+  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
+  await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
+
+  if (fourEyesRequired(model.isMoneyMoving)) {
+    if (!actor.userId) throw new ValidationError('A named user is required to propose this change');
+    const request = await createConfigRequest({
+      kind: 'target_create',
+      targetId: null,
+      payload: model,
+      summary: `Register money-moving target "${model.name}" (${model.endpointClass})`,
+      proposedBy: actor.userId,
+    });
+    await recordAudit({
+      actor,
+      action: 'config_request.proposed',
+      entityType: 'config_change_request',
+      entityId: request.id,
+      summary: request.summary,
+    });
+    return { status: 'pending_approval', request };
+  }
+
+  return { status: 'applied', target: await persistTargetCreate(model, actor) };
 }
 
 export async function getTarget(id: string): Promise<MonitoredApi> {
@@ -230,20 +281,13 @@ export async function testTarget(id: string, actor: AuditActor): Promise<HealthC
   return outcome;
 }
 
-export async function updateTarget(
+export async function persistTargetUpdate(
   id: string,
-  input: unknown,
+  model: TargetWriteModel,
+  existing: MonitoredApi,
   actor: AuditActor,
+  note?: string,
 ): Promise<MonitoredApi> {
-  const payload = updateTargetSchema.parse(input);
-  const existing = await findTargetById(id);
-  if (!existing) throw new NotFoundError(`Target ${id} not found`);
-  const existingEnvelope = await findTargetCredentialEnvelope(id);
-  const model = mergeUpdateModel(existing, existingEnvelope, payload);
-
-  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
-  await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
-
   return withTransaction(async (client) => {
     const updated = await updateTargetRow(id, model, client);
     if (!updated) throw new NotFoundError(`Target ${id} not found`);
@@ -253,13 +297,50 @@ export async function updateTarget(
         action: 'target.updated',
         entityType: 'monitored_api',
         entityId: id,
-        summary: `Updated target "${updated.name}"`,
+        summary: `Updated target "${updated.name}"` + (note ? ` — ${note}` : ''),
         changes: { before: redact(existing), after: redact(updated) },
       },
       client,
     );
     return updated;
   });
+}
+
+export async function updateTarget(
+  id: string,
+  input: unknown,
+  actor: AuditActor,
+): Promise<TargetMutationResult> {
+  const payload = updateTargetSchema.parse(input);
+  const existing = await findTargetById(id);
+  if (!existing) throw new NotFoundError(`Target ${id} not found`);
+  const existingEnvelope = await findTargetCredentialEnvelope(id);
+  const model = mergeUpdateModel(existing, existingEnvelope, payload);
+
+  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
+  await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
+
+  // A change to a target that is money-moving now OR would become money-moving.
+  if (fourEyesRequired(existing.isMoneyMoving || model.isMoneyMoving)) {
+    if (!actor.userId) throw new ValidationError('A named user is required to propose this change');
+    const request = await createConfigRequest({
+      kind: 'target_update',
+      targetId: id,
+      payload: model,
+      summary: `Change money-moving target "${existing.name}"`,
+      proposedBy: actor.userId,
+    });
+    await recordAudit({
+      actor,
+      action: 'config_request.proposed',
+      entityType: 'config_change_request',
+      entityId: request.id,
+      summary: request.summary,
+    });
+    return { status: 'pending_approval', request };
+  }
+
+  return { status: 'applied', target: await persistTargetUpdate(id, model, existing, actor) };
 }
 
 export async function setTargetEnabled(

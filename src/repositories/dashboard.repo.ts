@@ -188,6 +188,45 @@ export interface HealthCheckRow {
   errorMessage: string | null;
 }
 
+export interface PublicStatusRow {
+  name: string;
+  endpointClass: string;
+  status: HealthStatus | null;
+  uptime90d: number | null;
+}
+
+/**
+ * Sanitised per-target status for the public status page — no URLs, no internal
+ * ids, no failure detail (see vault: "PCI-DSS Scope Awareness" — nothing
+ * sensitive leaves the perimeter here).
+ */
+export async function getPublicStatus(): Promise<{
+  overall: 'operational' | 'degraded' | 'major_outage';
+  services: PublicStatusRow[];
+  generatedAt: string;
+}> {
+  const { rows } = await query<Record<string, unknown>>(
+    `SELECT m.name, m.endpoint_class, s.last_status,
+            (SELECT round(100.0 * count(*) FILTER (WHERE status IN ('UP','DEGRADED')) / NULLIF(count(*),0), 2)
+             FROM health_check_results r
+             WHERE r.api_id = m.id AND r.checked_at > now() - interval '90 days') uptime_90d
+     FROM monitored_apis m
+     LEFT JOIN target_schedule_state s ON s.target_id = m.id
+     WHERE m.is_active AND m.environment = 'production'
+     ORDER BY m.is_money_moving DESC, m.name`,
+  );
+  const services: PublicStatusRow[] = rows.map((r) => ({
+    name: r['name'] as string,
+    endpointClass: r['endpoint_class'] as string,
+    status: (r['last_status'] as HealthStatus | null) ?? null,
+    uptime90d: r['uptime_90d'] != null ? Number(r['uptime_90d']) : null,
+  }));
+  const down = services.filter((s) => s.status === 'DOWN').length;
+  const degraded = services.filter((s) => s.status === 'DEGRADED').length;
+  const overall = down > 0 ? 'major_outage' : degraded > 0 ? 'degraded' : 'operational';
+  return { overall, services, generatedAt: new Date().toISOString() };
+}
+
 export async function getRecentHealthChecks(apiId: string, limit = 100): Promise<HealthCheckRow[]> {
   const { rows } = await query<Record<string, unknown>>(
     `SELECT id, checked_at, status, http_status, response_time_ms, error_type, error_message

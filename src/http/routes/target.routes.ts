@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { actorFromRequest } from '../actor.js';
+import { requireRole } from '../middleware/auth.js';
 import { pruneUndefined } from '../../lib/objects.js';
 import {
   createTarget,
@@ -10,10 +11,25 @@ import {
   setTargetEnabled,
   testTarget,
   updateTarget,
+  type TargetMutationResult,
 } from '../../services/target/target.service.js';
 import { ENDPOINT_CLASSES, ENVIRONMENTS } from '../../domain/enums.js';
 
 export const targetRouter: Router = Router();
+
+const canWrite = requireRole('DEVELOPER', 'ADMIN');
+const canOperate = requireRole('OPERATOR', 'DEVELOPER', 'ADMIN');
+
+function sendMutation(res: Response, result: TargetMutationResult, appliedStatus: number): void {
+  if (result.status === 'pending_approval') {
+    res.status(202).json({
+      data: result.request,
+      message: 'Money-moving change queued for four-eyes approval',
+    });
+  } else {
+    res.status(appliedStatus).json({ data: result.target });
+  }
+}
 
 const idParam = z.string().uuid();
 
@@ -34,9 +50,8 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
-targetRouter.post('/targets', async (req: Request, res: Response) => {
-  const target = await createTarget(req.body, actorFromRequest(req));
-  res.status(201).json({ data: target });
+targetRouter.post('/targets', canWrite, async (req: Request, res: Response) => {
+  sendMutation(res, await createTarget(req.body, actorFromRequest(req)), 201);
 });
 
 targetRouter.get('/targets', async (req: Request, res: Response) => {
@@ -50,27 +65,30 @@ targetRouter.get('/targets/:id', async (req: Request, res: Response) => {
   res.json({ data: target });
 });
 
-targetRouter.put('/targets/:id', async (req: Request, res: Response) => {
-  const target = await updateTarget(idParam.parse(req.params.id), req.body, actorFromRequest(req));
-  res.json({ data: target });
+targetRouter.put('/targets/:id', canWrite, async (req: Request, res: Response) => {
+  sendMutation(
+    res,
+    await updateTarget(idParam.parse(req.params.id), req.body, actorFromRequest(req)),
+    200,
+  );
 });
 
-targetRouter.delete('/targets/:id', async (req: Request, res: Response) => {
+targetRouter.delete('/targets/:id', requireRole('ADMIN'), async (req: Request, res: Response) => {
   await deleteTarget(idParam.parse(req.params.id), actorFromRequest(req));
   res.status(204).send();
 });
 
-targetRouter.post('/targets/:id/enable', async (req: Request, res: Response) => {
+targetRouter.post('/targets/:id/enable', canOperate, async (req: Request, res: Response) => {
   const target = await setTargetEnabled(idParam.parse(req.params.id), true, actorFromRequest(req));
   res.json({ data: target });
 });
 
-targetRouter.post('/targets/:id/disable', async (req: Request, res: Response) => {
+targetRouter.post('/targets/:id/disable', canOperate, async (req: Request, res: Response) => {
   const target = await setTargetEnabled(idParam.parse(req.params.id), false, actorFromRequest(req));
   res.json({ data: target });
 });
 
-targetRouter.post('/targets/:id/test', async (req: Request, res: Response) => {
+targetRouter.post('/targets/:id/test', canOperate, async (req: Request, res: Response) => {
   const outcome = await testTarget(idParam.parse(req.params.id), actorFromRequest(req));
   res.json({ data: outcome });
 });

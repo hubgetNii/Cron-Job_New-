@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { actorFromRequest } from '../actor.js';
+import { requireRole } from '../middleware/auth.js';
 import { pruneUndefined } from '../../lib/objects.js';
 import { ALERT_STATUSES, ALERT_TYPES } from '../../domain/enums.js';
 import { listAlerts } from '../../repositories/alerts.repo.js';
@@ -18,6 +19,8 @@ import {
 export const alertRouter: Router = Router();
 
 const idParam = z.string().uuid();
+const admin = requireRole('ADMIN');
+const canOperate = requireRole('OPERATOR', 'ADMIN');
 
 /* --- alerts (read) ----------------------------------------------------- */
 
@@ -51,13 +54,13 @@ alertRouter.get('/escalation-policies/:id', async (req: Request, res: Response) 
   res.json({ data: await getEscalationPolicyById(idParam.parse(req.params.id)) });
 });
 
-alertRouter.post('/escalation-policies', async (req: Request, res: Response) => {
+alertRouter.post('/escalation-policies', admin, async (req: Request, res: Response) => {
   const body = policyBody.parse(req.body);
   const policy = await createEscalationPolicy(body, actorFromRequest(req));
   res.status(201).json({ data: policy });
 });
 
-alertRouter.put('/escalation-policies/:id', async (req: Request, res: Response) => {
+alertRouter.put('/escalation-policies/:id', admin, async (req: Request, res: Response) => {
   const body = policyBody.partial().parse(req.body);
   const policy = await updateEscalationPolicy(
     idParam.parse(req.params.id),
@@ -89,7 +92,7 @@ alertRouter.get('/maintenance-windows', async (req: Request, res: Response) => {
   res.json({ data: await listMaintenanceWindows(includeExpired) });
 });
 
-alertRouter.post('/maintenance-windows', async (req: Request, res: Response) => {
+alertRouter.post('/maintenance-windows', canOperate, async (req: Request, res: Response) => {
   const body = windowBody.parse(req.body);
   const window = await createMaintenanceWindow(
     { ...body, targetId: body.targetId ?? null },
@@ -98,7 +101,7 @@ alertRouter.post('/maintenance-windows', async (req: Request, res: Response) => 
   res.status(201).json({ data: window });
 });
 
-alertRouter.delete('/maintenance-windows/:id', async (req: Request, res: Response) => {
+alertRouter.delete('/maintenance-windows/:id', canOperate, async (req: Request, res: Response) => {
   await deleteMaintenanceWindow(idParam.parse(req.params.id), actorFromRequest(req));
   res.status(204).send();
 });

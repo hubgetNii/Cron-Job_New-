@@ -6,12 +6,17 @@ import { logger } from '../lib/logger.js';
 import { appInfo } from '../lib/version.js';
 import { requestContext } from './middleware/request-context.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { authenticate } from './middleware/auth.js';
+import { apiRateLimit } from './middleware/rate-limit.js';
 import { healthRouter } from './routes/health.routes.js';
+import { authRouter } from './routes/auth.routes.js';
 import { targetRouter } from './routes/target.routes.js';
 import { schedulerRouter } from './routes/scheduler.routes.js';
 import { incidentRouter } from './routes/incident.routes.js';
 import { alertRouter } from './routes/alert.routes.js';
 import { dashboardRouter } from './routes/dashboard.routes.js';
+import { configRequestRouter } from './routes/config-request.routes.js';
+import { statusRouter } from './routes/status.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -23,7 +28,21 @@ export function createApp(): Express {
   app.disable('x-powered-by');
   app.set('trust proxy', true);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          connectSrc: ["'self'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+        },
+      },
+      hsts: { maxAge: 31_536_000, includeSubDomains: true },
+      referrerPolicy: { policy: 'no-referrer' },
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
   app.use(express.json({ limit: '1mb' }));
   app.use(requestContext);
 
@@ -43,12 +62,17 @@ export function createApp(): Express {
     res.json({ ...appInfo(), status: 'running' });
   });
 
-  // Ops endpoints are mounted at the root (see vault: "API Design").
+  // Ops + public endpoints — no auth.
   app.use(healthRouter);
+  app.use('/api/v1', statusRouter);
+  app.use('/api/v1', authRouter);
 
-  // API surface, added phase by phase under /api/v1.
+  // Authenticated API surface.
   const api = express.Router();
+  api.use(apiRateLimit());
+  api.use(authenticate);
   api.use(targetRouter);
+  api.use(configRequestRouter);
   api.use(schedulerRouter);
   api.use(incidentRouter);
   api.use(alertRouter);

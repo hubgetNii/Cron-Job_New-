@@ -1,6 +1,17 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Activity, LayoutDashboard, ListChecks, Radar, Siren, CircleDot } from 'lucide-react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  Activity,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  Radar,
+  ShieldQuestion,
+  Siren,
+  CircleDot,
+} from 'lucide-react';
 import { useSummary } from '@/lib/queries';
+import { api } from '@/lib/api';
+import { authStore } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -9,11 +20,20 @@ const NAV = [
   { to: '/app/incidents', label: 'Incidents', Icon: Siren },
   { to: '/app/scheduler', label: 'Scheduler', Icon: Activity },
   { to: '/app/alerts', label: 'Alerts', Icon: ListChecks },
+  { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
 ];
 
 export function AppShell() {
+  const navigate = useNavigate();
   const { data } = useSummary();
   const scheduler = data?.scheduler.health;
+  const user = authStore.user();
+
+  async function signOut(): Promise<void> {
+    await api.logout();
+    authStore.clear();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col">
@@ -40,8 +60,7 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2 text-xs">
-          <span className="text-[var(--color-text-faint)]">scheduler</span>
+        <div className="ml-auto flex items-center gap-3 text-xs">
           <span
             className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium"
             style={{
@@ -53,13 +72,24 @@ export function AppShell() {
                     : 'var(--color-down)',
               borderColor: 'var(--color-border)',
             }}
+            title="scheduler health"
           >
-            <span
-              className="size-1.5 rounded-full"
-              style={{ background: 'currentColor' }}
-            />
-            {scheduler ?? '…'}
+            <span className="size-1.5 rounded-full" style={{ background: 'currentColor' }} />
+            scheduler {scheduler ?? '…'}
           </span>
+          {user && (
+            <>
+              <span className="text-[var(--color-text-faint)]" title={user.roles.join(', ')}>
+                {user.email}
+              </span>
+              <button
+                onClick={() => void signOut()}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]"
+              >
+                <LogOut className="size-3.5" />
+              </button>
+            </>
+          )}
         </div>
       </header>
       <main className="flex-1 p-6">

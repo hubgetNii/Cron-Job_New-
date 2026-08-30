@@ -1,3 +1,11 @@
+export type RbacRole =
+  | 'ADMIN'
+  | 'OPERATOR'
+  | 'DEVELOPER'
+  | 'COMPLIANCE'
+  | 'MANAGEMENT'
+  | 'VIEWER';
+
 export type HealthStatus = 'UP' | 'DOWN' | 'DEGRADED' | 'UNKNOWN';
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type IncidentStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';

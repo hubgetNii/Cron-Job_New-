@@ -12,8 +12,9 @@ Full specification: `../FINTECH_CRON_MONITOR_README.md` and the Obsidian vault a
 
 ## Status
 
-**Phases 1–8 complete.** The cron engine (the core deliverable) passed its GATE chaos
-tests; incidents, tiered escalation, alert delivery and a live React dashboard sit on top.
+**Phases 1–9 complete.** The cron engine (the core deliverable) passed its GATE chaos
+tests; incidents, tiered escalation, alert delivery, a live React dashboard, and
+authentication + RBAC + four-eyes approval sit on top.
 
 The dashboard is a separate app in [`web/`](./web) — Vite + React + Tailwind v4 + shadcn/ui,
 polling this API every 10s. `cd web && npm run dev`.
@@ -132,7 +133,30 @@ Phase 8 — **dashboard** ([`web/`](./web)):
   self-contained, no deps, degrades to a black background if WebGL is unavailable
 - Charts use Recharts with the validated dataviz palette; status colours always carry an icon + label
 
-Not yet built: security hardening (Phase 9), AI (Phase 10), reporting (Phase 11).
+Phase 9 — **security & compliance**:
+
+- **Auth** — `POST /api/v1/auth/{login,refresh,logout,me}`. scrypt password hashing
+  (no native dep), HS256 access tokens (`jose`), opaque refresh tokens stored hashed
+  with **rotation + reuse detection** (replaying a used token burns the whole family)
+- **RBAC** — `authenticate` + `requireRole` on every mutation (`DEVELOPER`/`ADMIN` for
+  target config, `OPERATOR`/`ADMIN` for incidents & maintenance windows, `ADMIN` for
+  escalation policies & delete). `AUTH_ENABLED=false` bypasses for local dev, refused in prod
+- **Four-eyes** — a change to a money-moving target is queued as a `config_change_request`;
+  it applies only when a *different* `ADMIN` approves (`POST /config-requests/:id/{approve,reject}`,
+  DB `CHECK (reviewed_by <> proposed_by)`)
+- **Rate limiting** — Redis-backed (`rate-limiter-flexible`), per client key, with a stricter
+  bucket on login; in-process fallback if Redis blips
+- **Security headers** — tightened helmet CSP / HSTS / referrer-policy / CORP
+- **Credential encryption** — the AES-256-GCM envelope's key source is the seam a KMS
+  provider slots into (the envelope already carries a `keyId` for rotation)
+- Every audit row now carries a denormalised actor label, so deleting a user never
+  erases who acted; the append-only trigger allows exactly that one FK-detach and nothing else
+- `npm run create-admin`; first-run bootstrap from `BOOTSTRAP_ADMIN_*`
+
+The dashboard has a login page, stores tokens in `localStorage`, refreshes transparently on
+401, and an **Approvals** page for the four-eyes queue.
+
+Not yet built: AI (Phase 10), reporting (Phase 11).
 
 ## Getting started
 

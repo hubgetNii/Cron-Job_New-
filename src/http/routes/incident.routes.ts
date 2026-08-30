@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { actorFromRequest } from '../actor.js';
+import { requireRole } from '../middleware/auth.js';
 import { pruneUndefined } from '../../lib/objects.js';
 import { INCIDENT_STATUSES, INCIDENT_TYPES, SEVERITIES } from '../../domain/enums.js';
 import {
@@ -14,6 +15,7 @@ import {
 export const incidentRouter: Router = Router();
 
 const idParam = z.string().uuid();
+const canOperate = requireRole('OPERATOR', 'ADMIN');
 
 const listQuery = z.object({
   status: z.enum(INCIDENT_STATUSES).optional(),
@@ -38,12 +40,16 @@ incidentRouter.get('/incidents/:id', async (req: Request, res: Response) => {
   res.json({ data: incident });
 });
 
-incidentRouter.post('/incidents/:id/acknowledge', async (req: Request, res: Response) => {
-  const incident = await acknowledgeIncident(idParam.parse(req.params.id), actorFromRequest(req));
-  res.json({ data: incident });
-});
+incidentRouter.post(
+  '/incidents/:id/acknowledge',
+  canOperate,
+  async (req: Request, res: Response) => {
+    const incident = await acknowledgeIncident(idParam.parse(req.params.id), actorFromRequest(req));
+    res.json({ data: incident });
+  },
+);
 
-incidentRouter.post('/incidents/:id/resolve', async (req: Request, res: Response) => {
+incidentRouter.post('/incidents/:id/resolve', canOperate, async (req: Request, res: Response) => {
   const body = z.object({ resolution: z.string().min(1).max(4000) }).parse(req.body);
   const incident = await resolveIncidentManually(
     idParam.parse(req.params.id),
@@ -53,12 +59,16 @@ incidentRouter.post('/incidents/:id/resolve', async (req: Request, res: Response
   res.json({ data: incident });
 });
 
-incidentRouter.patch('/incidents/:id/root-cause', async (req: Request, res: Response) => {
-  const body = z.object({ rootCause: z.string().min(1).max(4000) }).parse(req.body);
-  const incident = await setIncidentRootCause(
-    idParam.parse(req.params.id),
-    body.rootCause,
-    actorFromRequest(req),
-  );
-  res.json({ data: incident });
-});
+incidentRouter.patch(
+  '/incidents/:id/root-cause',
+  canOperate,
+  async (req: Request, res: Response) => {
+    const body = z.object({ rootCause: z.string().min(1).max(4000) }).parse(req.body);
+    const incident = await setIncidentRootCause(
+      idParam.parse(req.params.id),
+      body.rootCause,
+      actorFromRequest(req),
+    );
+    res.json({ data: incident });
+  },
+);

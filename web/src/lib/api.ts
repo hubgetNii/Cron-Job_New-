@@ -1,3 +1,4 @@
+import { authStore, type AuthUser } from './auth';
 import type {
   Alert,
   CronJobRun,
@@ -23,22 +24,74 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+async function rawFetch(path: string, init: RequestInit): Promise<Response> {
+  const token = authStore.accessToken();
+  return fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
-      'x-actor-id': 'dashboard',
-      ...init?.headers,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...init.headers,
     },
   });
+}
+
+let refreshing: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  const rt = authStore.refreshToken();
+  if (!rt) return false;
+  refreshing ??= (async () => {
+    try {
+      const res = await fetch(`${BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) return false;
+      const { data } = (await res.json()) as {
+        data: { accessToken: string; refreshToken: string };
+      };
+      authStore.setAccess(data.accessToken, data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res = await rawFetch(path, init);
+
+  if (res.status === 401 && !path.startsWith('/auth/') && (await tryRefresh())) {
+    res = await rawFetch(path, init);
+  }
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    authStore.clear();
+    if (window.location.pathname !== '/login') window.location.href = '/login';
+  }
+
   const text = await res.text();
   const body = text ? (JSON.parse(text) as unknown) : null;
   if (!res.ok) {
     const err = body as { error?: { message?: string; code?: string } } | null;
-    throw new ApiError(err?.error?.message ?? `Request failed (${res.status})`, res.status, err?.error?.code);
+    throw new ApiError(
+      err?.error?.message ?? `Request failed (${res.status})`,
+      res.status,
+      err?.error?.code,
+    );
   }
   return body as T;
+}
+
+export interface LoginResponse {
+  user: AuthUser;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 }
 
 type Wrapped<T> = { data: T; count?: number };
@@ -75,4 +128,33 @@ export const api = {
     req<Wrapped<DashboardSummary['scheduler']>>('/scheduler/status').then((r) => r.data),
   jobRuns: () => req<Wrapped<CronJobRun[]>>('/scheduler/jobs').then((r) => r.data),
   missedRuns: () => req<Wrapped<MissedRun[]>>('/scheduler/missed-runs').then((r) => r.data),
+
+  configRequests: (params = '') =>
+    req<Wrapped<ConfigChangeRequest[]>>(`/config-requests${params}`).then((r) => r.data),
+  reviewConfigRequest: (id: string, decision: 'approve' | 'reject', note?: string) =>
+    req<Wrapped<ConfigChangeRequest>>(`/config-requests/${id}/${decision}`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }).then((r) => r.data),
+
+  login: (email: string, password: string) =>
+    req<Wrapped<LoginResponse>>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }).then((r) => r.data),
+  logout: () => req<null>('/auth/logout', { method: 'POST' }).catch(() => null),
+  me: () => req<Wrapped<AuthUser>>('/auth/me').then((r) => r.data),
 };
+
+export interface ConfigChangeRequest {
+  id: string;
+  kind: string;
+  targetId: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'APPLIED' | 'FAILED';
+  summary: string;
+  proposedBy: string;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  error: string | null;
+  createdAt: string;
+}

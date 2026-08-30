@@ -32,7 +32,9 @@ export async function recordAudit(entry: AuditEntry, runner?: Runner): Promise<v
   const { actor } = entry;
   const params = [
     actor.userId ?? null,
-    actor.userId ? null : (actor.label ?? 'system:unknown'),
+    // Always store a denormalised label so a later user deletion (FK SET NULL)
+    // does not erase who acted.
+    actor.label ?? (actor.userId ? `user:${actor.userId}` : 'system:unknown'),
     entry.action,
     entry.entityType,
     entry.entityId ?? null,
