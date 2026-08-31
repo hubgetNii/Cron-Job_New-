@@ -1,9 +1,15 @@
-# SMS health-digest notifications
+# Health-digest notifications (SMS + email)
 
-SMS is a **summary channel**, not an event stream. The per-event channels
-(WEBHOOK / SLACK / EMAIL / PUSH) fire on every incident and recovery. SMS does
-**not** — a periodic job snapshots overall system health and sends **at most one
-SMS per run, and only when the overall system level changes**.
+The digest is a **summary channel**, not an event stream. The per-event channels
+(WEBHOOK / SLACK / PUSH, and per-incident email) fire on every incident and
+recovery. The digest does **not** — a periodic job snapshots overall system
+health and, by default, notifies **only when the overall system level changes**.
+
+- **SMS** — a short summary. State-change only, per contact (unless flagged
+  `digest_every_run`).
+- **Email** — the **full platform status**, every service listed. Ibrahim
+  (`ibrahim@ismartghana.com`) is registered with `digest_every_run = true`, so
+  he gets the full status every run — "day in and out".
 
 ## The digest
 
@@ -136,6 +142,38 @@ GET http://157.180.53.137:5665/api/SendSms
 > provider's contract, not a choice. Keep `SMS_API_PASSWORD` out of source
 > control (it's in `.env`, which is gitignored).
 
+## Recipients — the `notification_contacts` table
+
+The standing list of who gets notifications "day in and out". One row per
+address:
+
+| column | meaning |
+|---|---|
+| `channel` | `EMAIL` or `SMS` |
+| `address` | email address or phone number |
+| `digest` | receives the health digest (default true) |
+| `digest_every_run` | `true` → every run (a full-status heartbeat); `false` → only on a level change (Rule A) |
+| `incident_alerts` | receives per-incident alerts (future) |
+| `is_active` | soft on/off |
+
+Managed via the API (ADMIN):
+
+```bash
+# add an SMS number, state-change only
+curl -s -X POST localhost:3000/api/v1/notification-contacts \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name":"Ops phone","channel":"SMS","address":"233553476530"}'
+
+# add an email that gets the full status every run
+curl -s -X POST localhost:3000/api/v1/notification-contacts \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name":"Ibrahim","channel":"EMAIL","address":"ibrahim@ismartghana.com","digestEveryRun":true}'
+
+curl -s localhost:3000/api/v1/notification-contacts -H "authorization: Bearer $TOKEN" | jq
+```
+
+`SMS_DIGEST_RECIPIENTS` (env) is still honoured and merged into the SMS list.
+
 ## Endpoints
 
 | | |
@@ -143,7 +181,8 @@ GET http://157.180.53.137:5665/api/SendSms
 | `GET /api/v1/health-digests` | recent digests (history) |
 | `GET /api/v1/health-digests/latest` | the current system-health summary |
 | `GET /api/v1/health-digests/preview` | what the next digest *would* say — does not persist or send |
-| `POST /api/v1/health-digests/evaluate` | force a run now (ADMIN/OPERATOR); sends an SMS only if the level changed |
+| `POST /api/v1/health-digests/evaluate` | force a run now (ADMIN/OPERATOR); notifies per Rule A / `digest_every_run` |
+| `GET/POST/PUT/DELETE /api/v1/notification-contacts` | manage the recipient list (ADMIN for writes) |
 
 ## Testing it
 
@@ -164,9 +203,11 @@ curl -s -X POST localhost:3000/api/v1/health-digests/evaluate -H "authorization:
 
 ## Data model
 
-`health_digests` — one row per run: `overall_level`, `previous_level`, service
-counts, `affected` (jsonb list), `sms_sent`, `sms_recipients`, `reason`,
-`next_check_at`. Migration `1725000012000`.
+- `health_digests` — one row per run: `overall_level`, `previous_level`, service
+  counts, `affected` (jsonb), `sms_sent`/`sms_recipients`,
+  `email_sent`/`email_recipients`, `reason`, `next_check_at`.
+  Migrations `1725000012000` + `1725000014000`.
+- `notification_contacts` — the recipient registry. Migration `1725000013000`.
 
 ## Testing a real send
 

@@ -118,11 +118,13 @@ Phase 7 — **alerting & escalation** (`services/alert/`, runs in the scheduler 
   **SMS** (iSmartGhana bulk-SMS gateway — GET with query params, `api_password`
   redacted from logs). Teams/Phone log until wired. A channel with no transport
   configured **logs** the notification rather than dropping it
-- **SMS is a digest channel, not per-event** — a job snapshots overall system health
-  every `SMS_DIGEST_INTERVAL_MINUTES` (default 30) and sends **one** SMS, only when the
-  overall level changes (HEALTHY / DEGRADED / CRITICAL). `health_digests` keeps the full
-  history. `GET /api/v1/health-digests{,/latest,/preview}`, `POST …/evaluate`.
-  [`docs/sms-digest-notifications.md`](./docs/sms-digest-notifications.md)
+- **The digest is a summary channel, not per-event** — a job snapshots overall system
+  health every `SMS_DIGEST_INTERVAL_MINUTES` (default 30). **SMS** = short summary, sent
+  only on an overall level change (HEALTHY / DEGRADED / CRITICAL); **email** = full
+  per-service status, and for a contact flagged `digest_every_run` it lands every run.
+  Recipients live in `notification_contacts` (`GET/POST/PUT/DELETE /api/v1/notification-contacts`).
+  `health_digests` keeps the history. `GET /api/v1/health-digests{,/latest,/preview}`,
+  `POST …/evaluate`. [`docs/sms-digest-notifications.md`](./docs/sms-digest-notifications.md)
 - **Escalation engine**: one due tier per cycle per OPEN incident; tier delays measured
   from `started_at`; **stops the moment an incident is acknowledged**; a tier with
   `condition: "is_money_moving"` only fires for money-moving incidents (spec 8.9 tier 4)

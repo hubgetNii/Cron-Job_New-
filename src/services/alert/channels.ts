@@ -134,17 +134,23 @@ class EmailChannel implements Channel {
   }
 
   async send(n: Notification): Promise<DeliveryResult> {
-    const to = env().ALERT_EMAIL_TO;
+    // An address on the notification wins (digest / contact-list recipients);
+    // ALERT_EMAIL_TO is the fallback for per-event alerts.
+    const to = n.recipient.includes('@') ? n.recipient : env().ALERT_EMAIL_TO;
     const transporter = this.getTransporter();
     if (!to || !transporter) {
-      return loggedFallback('EMAIL', n, !to ? 'ALERT_EMAIL_TO not set' : 'SMTP_HOST not set');
+      return loggedFallback('EMAIL', n, !to ? 'no recipient address' : 'SMTP_HOST not set');
     }
+    // Summary notifications (digest) carry a fully-formed subject + body.
+    const isSummary = Boolean(n.body) && n.incidentNumber === null;
     try {
       const info = (await transporter.sendMail({
         from: env().ALERT_EMAIL_FROM ?? 'cron-monitor@localhost',
         to,
-        subject: `[${n.severity}] ${n.subject}`,
-        text: `${n.body}\n\nRecipient group: ${n.recipient}\nIncident: ${n.incidentNumber ?? 'n/a'}`,
+        subject: isSummary ? n.subject : `[${n.severity}] ${n.subject}`,
+        text: isSummary
+          ? n.body
+          : `${n.body}\n\nRecipient group: ${n.recipient}\nIncident: ${n.incidentNumber ?? 'n/a'}`,
       })) as { messageId?: string };
       return { ok: true, detail: `queued ${info.messageId ?? 'ok'}` };
     } catch (err) {

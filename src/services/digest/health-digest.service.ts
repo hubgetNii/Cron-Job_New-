@@ -8,9 +8,17 @@ import {
   type HealthDigest,
   type SystemHealthLevel,
 } from '../../repositories/health-digests.repo.js';
+import { digestContacts } from '../../repositories/notification-contacts.repo.js';
 import { channelFor } from '../alert/channels.js';
 
 const log = componentLogger('health-digest');
+
+export interface ServiceStatus {
+  name: string;
+  status: string | null;
+  endpointClass: string;
+  isMoneyMoving: boolean;
+}
 
 export interface DigestSnapshot {
   overallLevel: SystemHealthLevel;
@@ -20,9 +28,12 @@ export interface DigestSnapshot {
   degradedServices: number;
   downServices: number;
   affected: AffectedService[];
-  /** Whether Rule A (overall state change) says to send an SMS this run. */
+  /** Full per-service list — used for the email "full status". */
+  services: ServiceStatus[];
+  /** Whether Rule A (overall state change) says to notify this run. */
   shouldSend: boolean;
   reason: string;
+  /** The short SMS text. */
   message: string;
   nextCheckAt: Date;
 }
@@ -103,6 +114,67 @@ export function composeMessage(s: {
   return lines.join('\n');
 }
 
+const STATUS_ICON: Record<string, string> = {
+  UP: '✅',
+  DEGRADED: '⚠️',
+  DOWN: '🔴',
+  UNKNOWN: '❔',
+};
+
+/** The email digest — the full platform status, every service listed. */
+export function composeEmail(s: {
+  now: Date;
+  nextCheckAt: Date;
+  overallLevel: SystemHealthLevel;
+  previousLevel: SystemHealthLevel | null;
+  services: ServiceStatus[];
+  healthyServices: number;
+  degradedServices: number;
+  downServices: number;
+}): { subject: string; body: string } {
+  const label = env().SMS_DIGEST_LABEL;
+  const meta = LEVEL_META[s.overallLevel];
+  const when = new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    ...(env().SMS_DIGEST_TIMEZONE ? { timeZone: env().SMS_DIGEST_TIMEZONE } : {}),
+  }).format(s.now);
+
+  const pad = Math.max(0, ...s.services.map((x) => (x.status ?? 'UNKNOWN').length));
+  const rows = [...s.services]
+    .sort(
+      (a, b) =>
+        Number(b.isMoneyMoving) - Number(a.isMoneyMoving) ||
+        (a.status === 'UP' ? 1 : 0) - (b.status === 'UP' ? 1 : 0) ||
+        a.name.localeCompare(b.name),
+    )
+    .map((x) => {
+      const st = (x.status ?? 'UNKNOWN').padEnd(pad);
+      const icon = STATUS_ICON[x.status ?? 'UNKNOWN'] ?? '❔';
+      const mm = x.isMoneyMoving ? '  [money-moving]' : '';
+      return `  ${icon} ${st}  ${x.name}  (${x.endpointClass})${mm}`;
+    });
+
+  const subject = `[${s.overallLevel}] ${label} — ${s.healthyServices}/${s.services.length} services healthy`;
+  const body = [
+    `${label} — full platform status`,
+    when,
+    '',
+    `Overall: ${meta.icon} ${s.overallLevel}${
+      s.previousLevel && s.previousLevel !== s.overallLevel ? `  (was ${s.previousLevel})` : ''
+    }`,
+    `Healthy ${s.healthyServices} · Degraded ${s.degradedServices} · Down ${s.downServices} · Total ${s.services.length}`,
+    '',
+    'Services:',
+    ...(rows.length > 0 ? rows : ['  (no services registered yet)']),
+    '',
+    `Next check: ${formatTime(s.nextCheckAt)}`,
+    '',
+    '— FinTech Cron Monitor',
+  ].join('\n');
+  return { subject, body };
+}
+
 /**
  * Rule A — send an SMS only when the *overall* level changes. A same-level run
  * (still DEGRADED, still CRITICAL, …) is suppressed — "service remains down"
@@ -178,6 +250,7 @@ export async function buildDigest(now: Date = new Date()): Promise<DigestSnapsho
     degradedServices,
     downServices,
     affected,
+    services,
     shouldSend,
     reason,
     message,
@@ -185,49 +258,111 @@ export async function buildDigest(now: Date = new Date()): Promise<DigestSnapsho
   };
 }
 
+/** Deduped list of SMS recipients: env `SMS_DIGEST_RECIPIENTS` ∪ SMS contacts. */
+async function smsRecipientList(): Promise<{ address: string; everyRun: boolean }[]> {
+  const envList = (env().SMS_DIGEST_RECIPIENTS ?? '')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((address) => ({ address, everyRun: false }));
+  const contacts = (await digestContacts('SMS')).map((c) => ({
+    address: c.address,
+    everyRun: c.digestEveryRun,
+  }));
+  const seen = new Set<string>();
+  return [...contacts, ...envList].filter((r) => {
+    const key = r.address.replace(/[^\d]/g, '');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /**
- * One digest run: snapshot health, record it, and send ONE SMS if Rule A says
- * the overall level changed. Always records the snapshot for history.
+ * One digest run: snapshot health, record it, and notify.
+ *
+ * - **SMS** — short summary; sent to each SMS recipient when the overall level
+ *   changed (Rule A), or every run for a contact flagged `digest_every_run`.
+ * - **EMAIL** — full per-service platform status; same trigger, and typically
+ *   `digest_every_run = true` so it lands every 30 minutes.
+ *
+ * The snapshot is always recorded for history, regardless of sends.
  */
 export async function evaluateDigest(now: Date = new Date()): Promise<HealthDigest> {
   const snap = await buildDigest(now);
-  const recipients = (env().SMS_DIGEST_RECIPIENTS ?? '')
-    .split(',')
-    .map((r) => r.trim())
-    .filter(Boolean);
+  const parts: string[] = [snap.reason];
+  let smsSent = 0;
+  let emailSent = 0;
 
-  let smsSent = false;
-  let reason = snap.reason;
-
-  if (env().SMS_DIGEST_ENABLED && snap.shouldSend) {
-    if (recipients.length === 0) {
-      reason = `${snap.reason} — would send SMS, but SMS_DIGEST_RECIPIENTS is empty`;
+  if (env().SMS_DIGEST_ENABLED) {
+    // --- SMS ---
+    const smsList = await smsRecipientList();
+    const smsTargets = smsList.filter((r) => snap.shouldSend || r.everyRun);
+    if (smsTargets.length === 0) {
+      parts.push(smsList.length === 0 ? 'no SMS recipients' : 'SMS: nothing to send this run');
     } else {
       const sms = channelFor('SMS');
       const outcomes = await Promise.all(
-        recipients.map((to) =>
+        smsTargets.map((r) =>
           sms.send({
             alertType: 'HEALTH_DIGEST',
             severity: snap.overallLevel,
             subject: `${env().SMS_DIGEST_LABEL}: ${snap.overallLevel}`,
             body: snap.message,
-            recipient: to,
+            recipient: r.address,
             incidentNumber: null,
             targetName: null,
             payload: { digest: true, level: snap.overallLevel },
           }),
         ),
       );
-      smsSent = outcomes.some((o) => o.ok);
-      reason = `${snap.reason} — SMS to ${recipients.length} recipient(s): ${outcomes
-        .map((o) => o.detail)
-        .join('; ')}`;
-      log.info(
-        { level: snap.overallLevel, previous: snap.previousLevel, recipients: recipients.length },
-        'health digest SMS sent',
+      smsSent = outcomes.filter((o) => o.ok).length;
+      parts.push(
+        `SMS → ${smsSent}/${smsTargets.length}: ${outcomes.map((o) => o.detail).join('; ')}`,
+      );
+    }
+
+    // --- EMAIL (full status) ---
+    const emailContacts = await digestContacts('EMAIL');
+    const emailTargets = emailContacts.filter((c) => snap.shouldSend || c.digestEveryRun);
+    if (emailTargets.length > 0) {
+      const mail = channelFor('EMAIL');
+      const { subject, body } = composeEmail({
+        now,
+        nextCheckAt: snap.nextCheckAt,
+        overallLevel: snap.overallLevel,
+        previousLevel: snap.previousLevel,
+        services: snap.services,
+        healthyServices: snap.healthyServices,
+        degradedServices: snap.degradedServices,
+        downServices: snap.downServices,
+      });
+      const outcomes = await Promise.all(
+        emailTargets.map((c) =>
+          mail.send({
+            alertType: 'HEALTH_DIGEST',
+            severity: snap.overallLevel,
+            subject,
+            body,
+            recipient: c.address,
+            incidentNumber: null,
+            targetName: null,
+            payload: { digest: true, level: snap.overallLevel },
+          }),
+        ),
+      );
+      emailSent = outcomes.filter((o) => o.ok).length;
+      parts.push(
+        `Email → ${emailSent}/${emailTargets.length}: ${outcomes.map((o) => o.detail).join('; ')}`,
       );
     }
   }
+
+  const reason = parts.join(' | ');
+  log.info(
+    { level: snap.overallLevel, previous: snap.previousLevel, smsSent, emailSent },
+    'health digest evaluated',
+  );
 
   return saveDigest({
     overallLevel: snap.overallLevel,
@@ -237,8 +372,10 @@ export async function evaluateDigest(now: Date = new Date()): Promise<HealthDige
     degradedServices: snap.degradedServices,
     downServices: snap.downServices,
     affected: snap.affected,
-    smsSent,
-    smsRecipients: smsSent ? recipients.length : 0,
+    smsSent: smsSent > 0,
+    smsRecipients: smsSent,
+    emailSent: emailSent > 0,
+    emailRecipients: emailSent,
     reason,
     nextCheckAt: snap.nextCheckAt,
   });

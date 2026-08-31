@@ -21,13 +21,16 @@ export interface HealthDigest {
   affected: AffectedService[];
   smsSent: boolean;
   smsRecipients: number;
+  emailSent: boolean;
+  emailRecipients: number;
   reason: string;
   nextCheckAt: Date | null;
 }
 
 const COLUMNS = `
   id, generated_at, overall_level, previous_level, total_services, healthy_services,
-  degraded_services, down_services, affected, sms_sent, sms_recipients, reason, next_check_at`;
+  degraded_services, down_services, affected, sms_sent, sms_recipients, email_sent,
+  email_recipients, reason, next_check_at`;
 
 function toDomain(r: Record<string, unknown>): HealthDigest {
   return {
@@ -42,6 +45,8 @@ function toDomain(r: Record<string, unknown>): HealthDigest {
     affected: (r['affected'] as AffectedService[] | null) ?? [],
     smsSent: r['sms_sent'] as boolean,
     smsRecipients: Number(r['sms_recipients']),
+    emailSent: r['email_sent'] as boolean,
+    emailRecipients: Number(r['email_recipients']),
     reason: r['reason'] as string,
     nextCheckAt: (r['next_check_at'] as Date | null) ?? null,
   };
@@ -72,14 +77,17 @@ export async function saveDigest(input: {
   affected: AffectedService[];
   smsSent: boolean;
   smsRecipients: number;
+  emailSent: boolean;
+  emailRecipients: number;
   reason: string;
   nextCheckAt: Date | null;
 }): Promise<HealthDigest> {
   const { rows } = await query(
     `INSERT INTO health_digests
        (overall_level, previous_level, total_services, healthy_services, degraded_services,
-        down_services, affected, sms_sent, sms_recipients, reason, next_check_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        down_services, affected, sms_sent, sms_recipients, email_sent, email_recipients,
+        reason, next_check_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${COLUMNS}`,
     [
       input.overallLevel,
@@ -91,6 +99,8 @@ export async function saveDigest(input: {
       JSON.stringify(input.affected),
       input.smsSent,
       input.smsRecipients,
+      input.emailSent,
+      input.emailRecipients,
       input.reason,
       input.nextCheckAt,
     ],

@@ -129,11 +129,13 @@ describe.skipIf(!dbUp)('evaluateDigest — Rule A (overall state change)', () =>
     resetEnvCache();
     await query(`DELETE FROM monitored_apis`);
     await query(`DELETE FROM health_digests`);
+    await query(`DELETE FROM notification_contacts`);
     await closePool();
   });
   beforeEach(async () => {
     await query(`DELETE FROM health_digests`);
     await query(`DELETE FROM monitored_apis`);
+    await query(`DELETE FROM notification_contacts`);
     ids = {
       a: await seedService('Ledger API', 'UP'),
       b: await seedService('Notification API', 'UP'),
@@ -198,5 +200,31 @@ describe.skipIf(!dbUp)('evaluateDigest — Rule A (overall state change)', () =>
     const after = await query(`SELECT count(*)::int n FROM health_digests`);
     expect(preview.overallLevel).toBe('HEALTHY');
     expect(after.rows[0]!.n).toBe(before.rows[0]!.n);
+  });
+
+  it('an every-run EMAIL contact gets the full-status email even when nothing changed', async () => {
+    await query(
+      `INSERT INTO notification_contacts (name, channel, address, digest, digest_every_run)
+       VALUES ('Ibrahim', 'EMAIL', 'ibrahim@ismartghana.com', true, true)`,
+    );
+    await evaluateDigest(); // baseline HEALTHY
+    const second = await evaluateDigest(); // still HEALTHY — no state change
+    expect(second.overallLevel).toBe('HEALTHY');
+    expect(second.emailSent).toBe(true); // logged-fallback counts as ok
+    expect(second.emailRecipients).toBe(1);
+    expect(second.reason).toMatch(/Email → 1\/1/);
+  });
+
+  it('a state-change-only EMAIL contact only gets email on a transition', async () => {
+    await query(
+      `INSERT INTO notification_contacts (name, channel, address, digest, digest_every_run)
+       VALUES ('Ops', 'EMAIL', 'ops@ismartghana.com', true, false)`,
+    );
+    const first = await evaluateDigest(); // HEALTHY first digest — no send
+    expect(first.emailSent).toBe(false);
+
+    await setStatus(ids.b!, 'DOWN');
+    const changed = await evaluateDigest(); // HEALTHY → DEGRADED
+    expect(changed.emailSent).toBe(true);
   });
 });
