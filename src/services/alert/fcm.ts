@@ -144,6 +144,34 @@ export class FcmClient {
     return JSON.parse(text) as { name: string };
   }
 
+  /**
+   * Adds or removes device tokens on a topic via the Instance ID API, so alerts
+   * addressed to `/topics/<topic>` reach them. `op` is `add` or `remove`.
+   */
+  async manageTopic(
+    op: 'add' | 'remove',
+    topic: string,
+    tokens: string[],
+  ): Promise<{ results: Array<Record<string, unknown>> }> {
+    const accessToken = await this.accessToken();
+    const endpoint = op === 'add' ? 'batchAdd' : 'batchRemove';
+    const res = await request(`https://iid.googleapis.com/iid/v1:${endpoint}`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+        access_token_auth: 'true',
+      },
+      body: JSON.stringify({ to: `/topics/${topic}`, registration_tokens: tokens }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = await res.body.text();
+    if (res.statusCode >= 300) {
+      throw new Error(`FCM topic ${op} HTTP ${res.statusCode}: ${text.slice(0, 300)}`);
+    }
+    return JSON.parse(text) as { results: Array<Record<string, unknown>> };
+  }
+
   /** Test seam — drop the cached token/account. */
   reset(): void {
     this.account = undefined;

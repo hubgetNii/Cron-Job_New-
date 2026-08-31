@@ -72,4 +72,18 @@ describe.skipIf(!dbUp)('POST /alerts/test', () => {
       .send({ channel: 'CARRIER_PIGEON' });
     expect(res.status).toBe(422);
   });
+
+  it('push/subscribe is ADMIN-only and 503s when FCM is unconfigured', async () => {
+    const denied = await request(app)
+      .post('/api/v1/alerts/push/subscribe')
+      .set('authorization', `Bearer ${viewerToken}`)
+      .send({ token: 'x' });
+    expect(denied.status).toBe(403);
+
+    const unconfigured = await request(app)
+      .post('/api/v1/alerts/push/subscribe')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ token: 'x' });
+    expect(unconfigured.status).toBe(503);
+  });
 });

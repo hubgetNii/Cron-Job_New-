@@ -6,6 +6,9 @@ import { pruneUndefined } from '../../lib/objects.js';
 import { ALERT_CHANNELS, ALERT_STATUSES, ALERT_TYPES } from '../../domain/enums.js';
 import { listAlerts } from '../../repositories/alerts.repo.js';
 import { channelFor } from '../../services/alert/channels.js';
+import { FcmClient, getFcmClient } from '../../services/alert/fcm.js';
+import { env } from '../../config/index.js';
+import { ServiceUnavailableError } from '../../lib/errors.js';
 import { recordAudit } from '../../services/audit/audit.service.js';
 import { listOnCallSchedules } from '../../repositories/escalation-policies.repo.js';
 import {
@@ -67,6 +70,37 @@ alertRouter.post('/alerts/test', admin, async (req: Request, res: Response) => {
     summary: `Test alert via ${body.channel} → ${outcome.ok ? 'ok' : 'failed'} (${outcome.detail})`,
   });
   res.status(outcome.ok ? 200 : 502).json({ data: { channel: body.channel, ...outcome } });
+});
+
+/* --- FCM topic subscription (ADMIN) --------------------------------------- */
+
+const topicBody = z.object({
+  token: z.string().min(1).max(4096),
+  topic: z.string().min(1).max(200).optional(),
+});
+
+alertRouter.post('/alerts/push/subscribe', admin, async (req: Request, res: Response) => {
+  if (!FcmClient.configured()) throw new ServiceUnavailableError('FCM is not configured');
+  const { token, topic } = topicBody.parse(req.body);
+  const t = topic ?? env().FCM_DEFAULT_TOPIC;
+  if (!t) throw new ServiceUnavailableError('No topic given and FCM_DEFAULT_TOPIC is unset');
+  const result = await getFcmClient().manageTopic('add', t, [token]);
+  await recordAudit({
+    actor: actorFromRequest(req),
+    action: 'push.subscribed',
+    entityType: 'alert',
+    summary: `Subscribed a device token to FCM topic "${t}"`,
+  });
+  res.json({ data: { topic: t, ...result } });
+});
+
+alertRouter.post('/alerts/push/unsubscribe', admin, async (req: Request, res: Response) => {
+  if (!FcmClient.configured()) throw new ServiceUnavailableError('FCM is not configured');
+  const { token, topic } = topicBody.parse(req.body);
+  const t = topic ?? env().FCM_DEFAULT_TOPIC;
+  if (!t) throw new ServiceUnavailableError('No topic given and FCM_DEFAULT_TOPIC is unset');
+  const result = await getFcmClient().manageTopic('remove', t, [token]);
+  res.json({ data: { topic: t, ...result } });
 });
 
 /* --- escalation policies --------------------------------------------- */

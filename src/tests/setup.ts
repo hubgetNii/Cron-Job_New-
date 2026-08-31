@@ -11,3 +11,16 @@ process.env['ENABLE_REQUEST_LOGGING'] ??= 'false';
 // Auth is off by default in the suite; auth/four-eyes tests opt in explicitly.
 process.env['AUTH_ENABLED'] ??= 'false';
 process.env['JWT_SECRET'] ??= 'test-jwt-secret-at-least-sixteen-chars';
+
+// Pin alerting defaults so a developer's `.env` (which may enable PUSH and point
+// at a real Firebase key) cannot leak into the suite. Hard `=` so these win over
+// `dotenv/config`. Tests that exercise fan-out / FCM override at runtime.
+process.env['ALERT_DEFAULT_CHANNELS'] = 'WEBHOOK';
+process.env['ALERT_DEFAULT_RECIPIENT'] = 'ops';
+process.env['FCM_SERVICE_ACCOUNT_FILE'] = '';
+process.env['FCM_DEFAULT_TOPIC'] = '';
+
+// Effectively disable HTTP rate limiting in the suite — no test asserts a 429,
+// and the IP-keyed counters otherwise accumulate across the e2e files.
+process.env['RATE_LIMIT_POINTS'] = '1000000';
+process.env['RATE_LIMIT_LOGIN_POINTS'] = '1000000';
