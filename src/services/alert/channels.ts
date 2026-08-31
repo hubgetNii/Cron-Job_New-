@@ -126,6 +126,9 @@ class EmailChannel implements Channel {
     if (this.transporter) return this.transporter;
     const { SMTP_SERVICE, SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD } = env();
     if (!SMTP_SERVICE && !SMTP_HOST) return null;
+    // A well-known service (gmail, …) always needs credentials; a bare host may
+    // be an unauthenticated local relay.
+    if (SMTP_SERVICE && !(SMTP_USER && SMTP_PASSWORD)) return null;
     const auth =
       SMTP_USER && SMTP_PASSWORD ? { auth: { user: SMTP_USER, pass: SMTP_PASSWORD } } : {};
     this.transporter = nodemailer.createTransport(
