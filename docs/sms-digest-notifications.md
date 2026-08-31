@@ -7,9 +7,50 @@ health and, by default, notifies **only when the overall system level changes**.
 
 - **SMS** — a short summary. State-change only, per contact (unless flagged
   `digest_every_run`).
-- **Email** — the **full platform status**, every service listed. Ibrahim
-  (`ibrahim@ismartghana.com`) is registered with `digest_every_run = true`, so
-  he gets the full status every run — "day in and out".
+- **Email** — a **full per-system status report** (text + HTML): every monitored
+  system with its status, 24h uptime, last response time and whether it has an
+  open incident, plus the overall level and open-incident count. Ibrahim
+  (`ibrahim@ismartghana.com`) is registered with `digest_every_run = true`, so he
+  gets the full report every run — "day in and out".
+
+## Email setup
+
+Set an SMTP transport in `.env` — either a nodemailer well-known service or a host:
+
+```dotenv
+SMTP_SERVICE=gmail            # gmail / outlook365 / zoho / …   (OR use SMTP_HOST)
+# SMTP_HOST=mail.ismartghana.com
+# SMTP_PORT=587
+# SMTP_SECURE=                # true for 465
+SMTP_USER=notifications@ismartghana.com
+SMTP_PASSWORD=…               # an app password, not the login password
+ALERT_EMAIL_FROM=cron-monitor@ismartghana.com
+```
+
+Restart the scheduler. Until SMTP is set the report is **logged only** (visible
+in the scheduler log and the digest `reason`), never dropped.
+
+The email report:
+
+```
+[DEGRADED] iSmart Health — 2/3 systems healthy         ← subject
+
+iSmart Health — full platform status
+31 Aug 2026, 10:00
+
+Overall: ⚠️ DEGRADED  (was HEALTHY)
+Systems: 2 healthy · 0 degraded · 1 down · 3 total
+Open incidents: 1
+
+All systems:
+  🔴 DOWN      Payments API   up24h 71.20% · resp — · INCIDENT OPEN · money-moving
+  ✅ UP        Ledger API     up24h 99.90% · resp 120 ms
+  ✅ UP        SMS API        up24h 100.00% · resp 120 ms
+
+Next check: 10:30 AM
+```
+
+(HTML alternative: a coloured status table.)
 
 ## The digest
 

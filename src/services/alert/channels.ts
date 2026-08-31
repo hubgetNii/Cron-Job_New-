@@ -34,6 +34,8 @@ export interface Notification {
   severity: string;
   subject: string;
   body: string;
+  /** Optional HTML alternative — used by the email channel when present. */
+  html?: string;
   recipient: string;
   incidentNumber?: string | null;
   targetName?: string | null;
@@ -122,14 +124,15 @@ class EmailChannel implements Channel {
 
   private getTransporter(): Transporter | null {
     if (this.transporter) return this.transporter;
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD } = env();
-    if (!SMTP_HOST) return null;
-    this.transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      ...(SMTP_USER && SMTP_PASSWORD ? { auth: { user: SMTP_USER, pass: SMTP_PASSWORD } } : {}),
-    });
+    const { SMTP_SERVICE, SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD } = env();
+    if (!SMTP_SERVICE && !SMTP_HOST) return null;
+    const auth =
+      SMTP_USER && SMTP_PASSWORD ? { auth: { user: SMTP_USER, pass: SMTP_PASSWORD } } : {};
+    this.transporter = nodemailer.createTransport(
+      SMTP_SERVICE
+        ? { service: SMTP_SERVICE, ...auth }
+        : { host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE ?? SMTP_PORT === 465, ...auth },
+    );
     return this.transporter;
   }
 
@@ -139,10 +142,10 @@ class EmailChannel implements Channel {
     const to = n.recipient.includes('@') ? n.recipient : env().ALERT_EMAIL_TO;
     const transporter = this.getTransporter();
     if (!to || !transporter) {
-      return loggedFallback('EMAIL', n, !to ? 'no recipient address' : 'SMTP_HOST not set');
+      return loggedFallback('EMAIL', n, !to ? 'no recipient address' : 'SMTP not configured');
     }
-    // Summary notifications (digest) carry a fully-formed subject + body.
-    const isSummary = Boolean(n.body) && n.incidentNumber === null;
+    // Summary / report notifications carry a fully-formed subject + body (+ html).
+    const isSummary = Boolean(n.body) && n.incidentNumber == null;
     try {
       const info = (await transporter.sendMail({
         from: env().ALERT_EMAIL_FROM ?? 'cron-monitor@localhost',
@@ -151,6 +154,7 @@ class EmailChannel implements Channel {
         text: isSummary
           ? n.body
           : `${n.body}\n\nRecipient group: ${n.recipient}\nIncident: ${n.incidentNumber ?? 'n/a'}`,
+        ...(n.html ? { html: n.html } : {}),
       })) as { messageId?: string };
       return { ok: true, detail: `queued ${info.messageId ?? 'ok'}` };
     } catch (err) {

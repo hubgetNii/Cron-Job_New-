@@ -2,7 +2,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { checkDbHealth, closePool, query } from '../../lib/db.js';
 import { resetEnvCache } from '../../config/index.js';
 import type { AffectedService } from '../../repositories/health-digests.repo.js';
-import { buildDigest, composeMessage, evaluateDigest, rollUp } from './health-digest.service.js';
+import {
+  buildDigest,
+  composeEmail,
+  composeMessage,
+  evaluateDigest,
+  rollUp,
+  type ServiceStatus,
+} from './health-digest.service.js';
 
 const dbUp = (await checkDbHealth()).ok;
 
@@ -80,6 +87,76 @@ describe('composeMessage', () => {
     expect(msg).toContain('Status: ✅ HEALTHY');
     expect(msg).toContain('All 20 services healthy.');
     expect(msg).toContain('Recovered from CRITICAL.');
+  });
+});
+
+describe('composeEmail (full platform report)', () => {
+  const svc = (over: Partial<ServiceStatus>): ServiceStatus => ({
+    name: 'Svc',
+    status: 'UP',
+    endpointClass: 'internal',
+    environment: 'production',
+    isMoneyMoving: false,
+    uptime24h: 99.9,
+    lastResponseMs: 120,
+    lastRunAt: new Date(),
+    openIncident: false,
+    ...over,
+  });
+
+  const report = composeEmail({
+    now: new Date('2026-08-31T10:00:00Z'),
+    nextCheckAt: new Date('2026-08-31T10:30:00Z'),
+    overallLevel: 'DEGRADED',
+    previousLevel: 'HEALTHY',
+    healthyServices: 2,
+    degradedServices: 0,
+    downServices: 1,
+    openIncidents: 1,
+    services: [
+      svc({
+        name: 'Payments API',
+        status: 'DOWN',
+        isMoneyMoving: true,
+        openIncident: true,
+        uptime24h: 71.2,
+      }),
+      svc({ name: 'Ledger API', status: 'UP' }),
+      svc({ name: 'SMS API', status: 'UP', uptime24h: 100 }),
+    ],
+  });
+
+  it('lists every system with status, uptime and response time (text)', () => {
+    expect(report.subject).toBe('[DEGRADED] iSmart Health — 2/3 systems healthy');
+    expect(report.body).toContain('Payments API');
+    expect(report.body).toContain('Ledger API');
+    expect(report.body).toContain('up24h 71.20%');
+    expect(report.body).toContain('INCIDENT OPEN');
+    expect(report.body).toContain('Open incidents: 1');
+    // money-moving / down service sorts first
+    expect(report.body.indexOf('Payments API')).toBeLessThan(report.body.indexOf('Ledger API'));
+  });
+
+  it('produces safe HTML', () => {
+    expect(report.html).toContain('<table');
+    expect(report.html).toContain('Payments API');
+    expect(report.html).toContain('incident open');
+    expect(report.html).not.toContain('<script');
+  });
+
+  it('escapes system names in HTML', () => {
+    const r = composeEmail({
+      now: new Date(),
+      nextCheckAt: new Date(),
+      overallLevel: 'HEALTHY',
+      previousLevel: 'HEALTHY',
+      healthyServices: 1,
+      degradedServices: 0,
+      downServices: 0,
+      openIncidents: 0,
+      services: [svc({ name: '<b>x</b> & "y"' })],
+    });
+    expect(r.html).toContain('&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;');
   });
 });
 

@@ -17,7 +17,12 @@ export interface ServiceStatus {
   name: string;
   status: string | null;
   endpointClass: string;
+  environment: string;
   isMoneyMoving: boolean;
+  uptime24h: number | null;
+  lastResponseMs: number | null;
+  lastRunAt: Date | null;
+  openIncident: boolean;
 }
 
 export interface DigestSnapshot {
@@ -120,9 +125,29 @@ const STATUS_ICON: Record<string, string> = {
   DOWN: '🔴',
   UNKNOWN: '❔',
 };
+const STATUS_COLOR: Record<string, string> = {
+  UP: '#1a8f4e',
+  DEGRADED: '#c98a10',
+  DOWN: '#cf3f39',
+  UNKNOWN: '#6b7280',
+};
 
-/** The email digest — the full platform status, every service listed. */
-export function composeEmail(s: {
+function fmtUptime(v: number | null): string {
+  return v == null ? '—' : `${v.toFixed(2)}%`;
+}
+function fmtMs(v: number | null): string {
+  return v == null ? '—' : `${v} ms`;
+}
+function sortServices(list: ServiceStatus[]): ServiceStatus[] {
+  return [...list].sort(
+    (a, b) =>
+      Number(b.isMoneyMoving) - Number(a.isMoneyMoving) ||
+      (a.status === 'UP' ? 1 : 0) - (b.status === 'UP' ? 1 : 0) ||
+      a.name.localeCompare(b.name),
+  );
+}
+
+export interface EmailReportInput {
   now: Date;
   nextCheckAt: Date;
   overallLevel: SystemHealthLevel;
@@ -131,7 +156,19 @@ export function composeEmail(s: {
   healthyServices: number;
   degradedServices: number;
   downServices: number;
-}): { subject: string; body: string } {
+  openIncidents: number;
+}
+
+/**
+ * The email report — the full platform status: every monitored system with its
+ * status, 24h uptime, last response time and whether it has an open incident.
+ * Returns a plain-text body and an HTML alternative.
+ */
+export function composeEmail(s: EmailReportInput): {
+  subject: string;
+  body: string;
+  html: string;
+} {
   const label = env().SMS_DIGEST_LABEL;
   const meta = LEVEL_META[s.overallLevel];
   const when = new Intl.DateTimeFormat('en-GB', {
@@ -139,40 +176,90 @@ export function composeEmail(s: {
     timeStyle: 'short',
     ...(env().SMS_DIGEST_TIMEZONE ? { timeZone: env().SMS_DIGEST_TIMEZONE } : {}),
   }).format(s.now);
+  const ordered = sortServices(s.services);
+  const wasLine =
+    s.previousLevel && s.previousLevel !== s.overallLevel ? `  (was ${s.previousLevel})` : '';
 
-  const pad = Math.max(0, ...s.services.map((x) => (x.status ?? 'UNKNOWN').length));
-  const rows = [...s.services]
-    .sort(
-      (a, b) =>
-        Number(b.isMoneyMoving) - Number(a.isMoneyMoving) ||
-        (a.status === 'UP' ? 1 : 0) - (b.status === 'UP' ? 1 : 0) ||
-        a.name.localeCompare(b.name),
-    )
-    .map((x) => {
-      const st = (x.status ?? 'UNKNOWN').padEnd(pad);
-      const icon = STATUS_ICON[x.status ?? 'UNKNOWN'] ?? '❔';
-      const mm = x.isMoneyMoving ? '  [money-moving]' : '';
-      return `  ${icon} ${st}  ${x.name}  (${x.endpointClass})${mm}`;
-    });
+  const subject = `[${s.overallLevel}] ${label} — ${s.healthyServices}/${s.services.length} systems healthy`;
 
-  const subject = `[${s.overallLevel}] ${label} — ${s.healthyServices}/${s.services.length} services healthy`;
+  /* --- plain text --- */
+  const namePad = Math.max(4, ...ordered.map((x) => x.name.length));
+  const textRows = ordered.map((x) => {
+    const icon = STATUS_ICON[x.status ?? 'UNKNOWN'] ?? '❔';
+    const st = (x.status ?? 'UNKNOWN').padEnd(9);
+    const nm = x.name.padEnd(namePad);
+    const extra = [
+      `up24h ${fmtUptime(x.uptime24h)}`,
+      `resp ${fmtMs(x.lastResponseMs)}`,
+      x.openIncident ? 'INCIDENT OPEN' : '',
+      x.isMoneyMoving ? 'money-moving' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return `  ${icon} ${st} ${nm}  ${extra}`;
+  });
   const body = [
     `${label} — full platform status`,
     when,
     '',
-    `Overall: ${meta.icon} ${s.overallLevel}${
-      s.previousLevel && s.previousLevel !== s.overallLevel ? `  (was ${s.previousLevel})` : ''
-    }`,
-    `Healthy ${s.healthyServices} · Degraded ${s.degradedServices} · Down ${s.downServices} · Total ${s.services.length}`,
+    `Overall: ${meta.icon} ${s.overallLevel}${wasLine}`,
+    `Systems: ${s.healthyServices} healthy · ${s.degradedServices} degraded · ${s.downServices} down · ${s.services.length} total`,
+    `Open incidents: ${s.openIncidents}`,
     '',
-    'Services:',
-    ...(rows.length > 0 ? rows : ['  (no services registered yet)']),
+    'All systems:',
+    ...(textRows.length > 0 ? textRows : ['  (no systems registered yet)']),
     '',
     `Next check: ${formatTime(s.nextCheckAt)}`,
     '',
     '— FinTech Cron Monitor',
   ].join('\n');
-  return { subject, body };
+
+  /* --- HTML --- */
+  const esc = (v: string): string =>
+    v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const htmlRows = ordered
+    .map((x) => {
+      const st = x.status ?? 'UNKNOWN';
+      const color = STATUS_COLOR[st] ?? '#6b7280';
+      const tags = [
+        x.openIncident ? '<span style="color:#cf3f39;font-weight:600">incident open</span>' : '',
+        x.isMoneyMoving ? '<span style="color:#c98a10">money-moving</span>' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:8px"></span>
+          <b style="color:${color}">${st}</b>
+        </td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee">${esc(x.name)}<div style="color:#888;font-size:12px">${esc(x.endpointClass)} · ${esc(x.environment)}${tags ? ' · ' + tags : ''}</div></td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums">${fmtUptime(x.uptime24h)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums">${fmtMs(x.lastResponseMs)}</td>
+      </tr>`;
+    })
+    .join('');
+  const bannerColor =
+    STATUS_COLOR[
+      s.overallLevel === 'HEALTHY' ? 'UP' : s.overallLevel === 'DEGRADED' ? 'DEGRADED' : 'DOWN'
+    ];
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px;margin:0 auto;color:#1a1d23">
+  <h2 style="margin:0 0 2px">${esc(label)} — full platform status</h2>
+  <p style="margin:0 0 16px;color:#888;font-size:13px">${esc(when)}</p>
+  <div style="background:${bannerColor}1a;border-left:4px solid ${bannerColor};padding:12px 14px;border-radius:6px;margin-bottom:16px">
+    <b style="color:${bannerColor};font-size:15px">${meta.icon} ${s.overallLevel}</b>${wasLine ? `<span style="color:#888"> ${esc(wasLine.trim())}</span>` : ''}<br>
+    <span style="font-size:13px">${s.healthyServices} healthy · ${s.degradedServices} degraded · ${s.downServices} down · ${s.services.length} total · ${s.openIncidents} open incident${s.openIncidents === 1 ? '' : 's'}</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="text-align:left;color:#888;font-size:11px;text-transform:uppercase">
+      <th style="padding:6px 10px">Status</th><th style="padding:6px 10px">System</th>
+      <th style="padding:6px 10px;text-align:right">Uptime 24h</th><th style="padding:6px 10px;text-align:right">Last response</th>
+    </tr></thead>
+    <tbody>${htmlRows || '<tr><td colspan="4" style="padding:12px 10px;color:#888">No systems registered yet.</td></tr>'}</tbody>
+  </table>
+  <p style="color:#888;font-size:12px;margin-top:16px">Next check: ${esc(formatTime(s.nextCheckAt))}<br>— FinTech Cron Monitor</p>
+</div>`;
+
+  return { subject, body, html };
 }
 
 /**
@@ -200,11 +287,16 @@ export async function buildDigest(now: Date = new Date()): Promise<DigestSnapsho
   const board = (await getTargetStatusBoard()).filter(
     (t) => t.isActive && t.status !== null, // only active, already-checked services
   );
-  const services = board.map((t) => ({
+  const services: ServiceStatus[] = board.map((t) => ({
     name: t.name,
     status: t.status,
     endpointClass: t.endpointClass,
+    environment: t.environment,
     isMoneyMoving: t.isMoneyMoving,
+    uptime24h: t.uptime24h,
+    lastResponseMs: t.lastResponseMs,
+    lastRunAt: t.lastActualRunAt,
+    openIncident: t.openIncidentId !== null,
   }));
 
   const overallLevel = rollUp(services);
@@ -327,7 +419,7 @@ export async function evaluateDigest(now: Date = new Date()): Promise<HealthDige
     const emailTargets = emailContacts.filter((c) => snap.shouldSend || c.digestEveryRun);
     if (emailTargets.length > 0) {
       const mail = channelFor('EMAIL');
-      const { subject, body } = composeEmail({
+      const { subject, body, html } = composeEmail({
         now,
         nextCheckAt: snap.nextCheckAt,
         overallLevel: snap.overallLevel,
@@ -336,6 +428,7 @@ export async function evaluateDigest(now: Date = new Date()): Promise<HealthDige
         healthyServices: snap.healthyServices,
         degradedServices: snap.degradedServices,
         downServices: snap.downServices,
+        openIncidents: snap.services.filter((x) => x.openIncident).length,
       });
       const outcomes = await Promise.all(
         emailTargets.map((c) =>
@@ -344,6 +437,7 @@ export async function evaluateDigest(now: Date = new Date()): Promise<HealthDige
             severity: snap.overallLevel,
             subject,
             body,
+            html,
             recipient: c.address,
             incidentNumber: null,
             targetName: null,

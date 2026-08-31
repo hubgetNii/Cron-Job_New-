@@ -68,8 +68,12 @@ const EnvSchema = z.object({
 
   // Notification channels (Phase 7). Each channel needs a transport configured;
   // when one is missing the channel logs the notification instead of dropping it.
+  // Email transport (nodemailer). Either SMTP_SERVICE (a nodemailer well-known
+  // name like "gmail" / "outlook365") OR SMTP_HOST + SMTP_PORT.
+  SMTP_SERVICE: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().max(65_535).default(587),
+  SMTP_SECURE: BoolFromString.optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   ALERT_EMAIL_FROM: z.string().optional(),
