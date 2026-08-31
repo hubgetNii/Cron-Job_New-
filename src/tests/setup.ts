@@ -24,6 +24,10 @@ process.env['SMS_DIGEST_TIMEZONE'] = 'UTC';
 process.env['SMS_GATEWAY_URL'] = '';
 process.env['SMS_API_ID'] = '';
 process.env['SMS_API_PASSWORD'] = '';
+process.env['SMTP_SERVICE'] = '';
+process.env['SMTP_HOST'] = '';
+process.env['SMTP_USER'] = '';
+process.env['SMTP_PASSWORD'] = '';
 
 // Effectively disable HTTP rate limiting in the suite — no test asserts a 429,
 // and the IP-keyed counters otherwise accumulate across the e2e files.
