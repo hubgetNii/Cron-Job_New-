@@ -32,10 +32,13 @@ Minimum `.env` to boot with auth on:
 DATABASE_URL=postgres://cronmon:cronmon@localhost:5433/cronmon
 REDIS_URL=redis://localhost:6380
 AUTH_ENABLED=true
-JWT_SECRET=local-dev-jwt-secret-change-me-please      # must be >= 16 chars
-BOOTSTRAP_ADMIN_EMAIL=admin@ismartpay.local
-BOOTSTRAP_ADMIN_PASSWORD=cronmon-admin-2026           # must be >= 8 chars
+JWT_SECRET=            # >= 16 chars — generate: openssl rand -hex 32
+BOOTSTRAP_ADMIN_EMAIL=admin@yourorg.local
+BOOTSTRAP_ADMIN_PASSWORD=       # >= 8 chars — choose a strong one
 ```
+
+`.env` is gitignored — never commit real secrets. Only `.env.example`
+(all-blank) is tracked.
 
 For the quickest loop, set `AUTH_ENABLED=false` instead — every request then runs as a
 synthetic admin and you can skip the login. (The API refuses this in `NODE_ENV=production`.)

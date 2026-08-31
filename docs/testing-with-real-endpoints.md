@@ -358,7 +358,7 @@ Leave `AUTH_ENABLED=true` and set in `.env`:
 
 ```dotenv
 BOOTSTRAP_ADMIN_EMAIL=admin@ismartpay.local
-BOOTSTRAP_ADMIN_PASSWORD=cronmon-admin-2026
+BOOTSTRAP_ADMIN_PASSWORD=            # choose a strong one
 JWT_SECRET=local-dev-secret-at-least-16-chars
 ```
 
@@ -367,7 +367,7 @@ The API creates that admin on first start (or run `npm run create-admin`). Then:
 ```bash
 TOKEN=$(curl -s -X POST localhost:3000/api/v1/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"admin@ismartpay.local","password":"cronmon-admin-2026"}' | jq -r '.data.accessToken')
+  -d '{"email":"admin@example.com","password":"YOUR_ADMIN_PASSWORD"}' | jq -r '.data.accessToken')
 
 curl -s localhost:3000/api/v1/targets -H "authorization: Bearer $TOKEN" | jq
 ```

@@ -230,7 +230,7 @@ curl -s localhost:3000/api/v1/notification-contacts -H "authorization: Bearer $T
 ```bash
 TOKEN=$(curl -s -X POST localhost:3000/api/v1/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"admin@admin.local","password":"pass"}' | jq -r '.data.accessToken')
+  -d '{"email":"admin@example.com","password":"YOUR_ADMIN_PASSWORD"}' | jq -r '.data.accessToken')
 
 # see what it would send right now
 curl -s localhost:3000/api/v1/health-digests/preview -H "authorization: Bearer $TOKEN" | jq '.data.message,.data.reason'

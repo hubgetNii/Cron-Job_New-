@@ -67,7 +67,7 @@ You need *something* registered with FCM to receive messages:
 ```bash
 TOKEN=$(curl -s -X POST localhost:3000/api/v1/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"admin@admin.local","password":"pass"}' | jq -r '.data.accessToken')
+  -d '{"email":"admin@example.com","password":"YOUR_ADMIN_PASSWORD"}' | jq -r '.data.accessToken')
 
 # to the default topic
 curl -s -X POST localhost:3000/api/v1/alerts/test \

@@ -2,14 +2,20 @@ node_modules/
 dist/
 coverage/
 *.log
+.run/
+# environment — only .env.example (all-blank) is tracked; never commit real secrets
 .env
 .env.*
 !.env.example
-# secrets — service-account keys belong outside the repo; never commit them
+.envrc
+*.local
+# secrets — service-account keys / private keys belong outside the repo
 *firebase-adminsdk*.json
 *service-account*.json
 *serviceAccount*.json
 *.pem
+*.p8
+*.key
 .DS_Store
 .vscode/
 .idea/
