@@ -5,6 +5,7 @@ import { env } from '../../config/index.js';
 import { componentLogger } from '../../lib/logger.js';
 import type { AlertChannel } from '../../domain/enums.js';
 import { FcmClient, getFcmClient } from './fcm.js';
+import { sendSms, smsConfigured } from './sms-gateway.js';
 
 const log = componentLogger('alert-channel');
 
@@ -159,27 +160,14 @@ class SmsChannel implements Channel {
     // The recipient on the notification wins (digest recipients, escalation
     // tiers); ALERT_SMS_TO is the fallback for one-off per-event SMS.
     const to = n.recipient && n.recipient !== 'ops' ? n.recipient : env().ALERT_SMS_TO;
-    const url = env().SMS_PROVIDER_URL;
-    const key = env().SMS_PROVIDER_API_KEY;
-    if (!to || !url || !key) {
-      return loggedFallback('SMS', n, 'SMS_PROVIDER_URL/API_KEY/recipient not set');
+    if (!to) return loggedFallback('SMS', n, 'no recipient');
+    if (!smsConfigured()) {
+      return loggedFallback('SMS', n, 'SMS_GATEWAY_URL / SMS_API_ID / SMS_API_PASSWORD not set');
     }
     // Digest and other summary notifications carry the full text in `body`.
     const message = n.body && n.body.length > 0 ? n.body : `[${n.severity}] ${n.subject}`;
-    try {
-      const res = await request(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({ to, message }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      await res.body.dump();
-      return res.statusCode < 300
-        ? { ok: true, detail: `HTTP ${res.statusCode}` }
-        : { ok: false, detail: `SMS provider HTTP ${res.statusCode}` };
-    } catch (err) {
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
-    }
+    const result = await sendSms({ to, message });
+    return { ok: result.ok, detail: result.detail };
   }
 }
 

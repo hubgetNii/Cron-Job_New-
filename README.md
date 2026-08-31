@@ -115,8 +115,9 @@ Phase 7 — **alerting & escalation** (`services/alert/`, runs in the scheduler 
 
 - **Channels**: Webhook (HMAC-signed via `WEBHOOK_SIGNING_SECRET`), Slack, Email
   (`nodemailer`), **Push** (Firebase Cloud Messaging — [`docs/firebase-push-setup.md`](./docs/firebase-push-setup.md)),
-  SMS. Teams/Phone log until wired. A channel with no transport configured **logs**
-  the notification rather than dropping it
+  **SMS** (iSmartGhana bulk-SMS gateway — GET with query params, `api_password`
+  redacted from logs). Teams/Phone log until wired. A channel with no transport
+  configured **logs** the notification rather than dropping it
 - **SMS is a digest channel, not per-event** — a job snapshots overall system health
   every `SMS_DIGEST_INTERVAL_MINUTES` (default 30) and sends **one** SMS, only when the
   overall level changes (HEALTHY / DEGRADED / CRITICAL). `health_digests` keeps the full
@@ -254,6 +255,7 @@ src/
     ai/           advisory analysis + statistical anomaly detection (Phase 10)
     reporting/    SLA computation, report runner, compliance export (Phase 11)
     digest/       SMS system-health digest (summary channel, state-change only)
+    alert/sms-gateway.ts  iSmartGhana bulk-SMS transport (GET, credentials redacted)
   http/           express app, middleware, routes
   scheduler/      scheduler process entrypoint (cron + alerts + SLA reports)
   workers/        BullMQ worker entrypoint (idle stub — the horizontal-scale path)

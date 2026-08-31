@@ -20,6 +20,8 @@ const redactPaths = [
   '*.password',
   '*.secret',
   '*.token',
+  '*.api_password',
+  '*.apiPassword',
   '*.encrypted_credentials',
   'credentials',
 ];

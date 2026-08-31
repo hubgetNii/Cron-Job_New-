@@ -93,14 +93,48 @@ SMS_DIGEST_RECIPIENTS=+233200000000,+233240000000
 SMS_DIGEST_TIMEZONE=Africa/Accra
 SMS_DIGEST_LABEL=iSmart Health
 
-# transport (shared with per-event SMS) — pending the real MPSMS SMS API
-SMS_PROVIDER_URL=
-SMS_PROVIDER_API_KEY=
+# transport — the iSmartGhana bulk-SMS gateway (shared with per-event SMS)
+SMS_GATEWAY_URL=http://157.180.53.137:5665/api/SendSms
+SMS_API_ID=<from the provider>
+SMS_API_PASSWORD=<from the provider>
+SMS_SENDER_ID=Operation
+SMS_TYPE=P            # P = promotional/plain
+SMS_ENCODING=T        # T = text (GSM-7), U for unicode
+SMS_VALIDITY_SECONDS=1800
+SMS_CALLBACK_URL=     # optional delivery-report webhook
+SMS_DLT_ENTITY_ID=    # optional
+SMS_DLT_TEMPLATE_ID=  # optional
 ```
 
-With no `SMS_PROVIDER_URL` / no recipients, the digest still runs and is
+With no gateway configured (or no recipients), the digest still runs and is
 recorded — the send is **logged only** (visible in the scheduler log and in the
 digest's `reason`), never dropped.
+
+### The gateway (`services/alert/sms-gateway.ts`)
+
+The provider expects a **GET** with everything in the query string, including
+`api_id` and `api_password`:
+
+```
+GET http://157.180.53.137:5665/api/SendSms
+    ?api_id=…&api_password=…&sms_type=P&encoding=T&sender_id=Operation
+    &phonenumber=233551530764&textmessage=…&ValidityPeriodInSeconds=1800
+    &uid=<8 hex>&isScheduled=false[&callback_url=…]
+```
+
+- Numbers are normalised to digits only (`+233…` / `00233…` → `233…`).
+- Each message gets a random 8-hex `uid` for tracking.
+- `api_password` is on the logger's redact list and the built URL is never
+  logged — only `{ to, uid, statusCode, ok }` plus the response body (which
+  carries no credentials) so the exact response shape can be confirmed on the
+  first real send.
+- A 2xx with an obvious error flag in the body (`status: "Failed"`,
+  `ErrorCode` ≠ 0, an `error` string) is treated as a failure; anything
+  ambiguous is left as success so real sends are never hidden.
+
+> The gateway is plain **HTTP** and puts the password in the URL — that is the
+> provider's contract, not a choice. Keep `SMS_API_PASSWORD` out of source
+> control (it's in `.env`, which is gitignored).
 
 ## Endpoints
 
@@ -134,8 +168,19 @@ curl -s -X POST localhost:3000/api/v1/health-digests/evaluate -H "authorization:
 counts, `affected` (jsonb list), `sms_sent`, `sms_recipients`, `reason`,
 `next_check_at`. Migration `1725000012000`.
 
-## Pending
+## Testing a real send
 
-The real MPSMS SMS API (`vend.ismartghana.com/api/topup` family, or a dedicated
-SMS endpoint) will be wired into `SmsChannel` when the spec is provided. The
-digest engine, rules, history and endpoints above are complete and transport-agnostic.
+```bash
+# per-event style — sends one SMS immediately to a number
+curl -s -X POST localhost:3000/api/v1/alerts/test \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"channel":"SMS","recipient":"+233551530764","message":"cron monitor test"}' | jq
+
+# digest style — evaluate now; sends only if the overall level changed
+curl -s -X POST localhost:3000/api/v1/health-digests/evaluate \
+  -H "authorization: Bearer $TOKEN" | jq
+```
+
+Check the scheduler / API log line `SMS gateway response` for the provider's
+raw body — if its success/failure shape differs from what `looksLikeFailure()`
+assumes, tighten that function.

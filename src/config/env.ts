@@ -74,9 +74,21 @@ const EnvSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   ALERT_EMAIL_FROM: z.string().optional(),
   ALERT_EMAIL_TO: z.string().optional(),
-  SMS_PROVIDER_URL: z.string().url().optional(),
-  SMS_PROVIDER_API_KEY: z.string().optional(),
   ALERT_SMS_TO: z.string().optional(),
+
+  // SMS gateway (iSmartGhana / bulk SMS API): GET request with credentials in
+  // the query string. Unset → SMS is logged only. The password never reaches
+  // the logs (redacted) and is stored via env like other secrets.
+  SMS_GATEWAY_URL: z.string().url().optional(),
+  SMS_API_ID: z.string().optional(),
+  SMS_API_PASSWORD: z.string().optional(),
+  SMS_SENDER_ID: z.string().default('Operation'),
+  SMS_TYPE: z.string().default('P'),
+  SMS_ENCODING: z.string().default('T'),
+  SMS_VALIDITY_SECONDS: z.coerce.number().int().positive().default(1800),
+  SMS_CALLBACK_URL: z.string().optional(),
+  SMS_DLT_ENTITY_ID: z.string().optional(),
+  SMS_DLT_TEMPLATE_ID: z.string().optional(),
 
   // SMS is a *digest* channel, not an event stream (see vault: "SMS Health
   // Digest Notifications"). A job snapshots overall system health every
