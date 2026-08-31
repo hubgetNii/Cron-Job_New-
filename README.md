@@ -20,6 +20,7 @@ compliance reporting with a public status page sit on top. 153 tests, 0 vulnerab
 The dashboard is a separate app in [`web/`](./web) — Vite + React + Tailwind v4 + shadcn/ui,
 polling this API every 10s. `cd web && npm run dev`.
 
+**Deploying** (backend 24/7 on a server via Docker Compose, dashboard on Vercel): [`docs/deployment.md`](./docs/deployment.md).
 **Running it locally** (four processes + common errors): [`docs/running-locally.md`](./docs/running-locally.md).
 **Trying it against live endpoints:** [`docs/testing-with-real-endpoints.md`](./docs/testing-with-real-endpoints.md).
 
@@ -264,8 +265,12 @@ src/
   watchdog/       independent dead-man's-switch process
   tests/          shared setup + fixtures
 migrations/       node-pg-migrate SQL migrations
-docs/             runbooks (running-locally, testing-with-real-endpoints,
+docs/             runbooks (deployment, running-locally, testing-with-real-endpoints,
                             firebase-push-setup, sms-digest-notifications)
+docker-compose.prod.yml   self-contained production stack (api/scheduler/watchdog/
+                          worker + postgres + redis + Caddy TLS)
+Caddyfile                 reverse proxy + automatic HTTPS for the API
+web/vercel.json           dashboard build/SPA config for Vercel
 ```
 
 Layering is enforced: **Controller → Service → Repository → Database**. Business logic

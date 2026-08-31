@@ -1,0 +1,118 @@
+# Production topology — self-contained. Run with:
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# All app config comes from ./.env (see .env.production.example). Postgres and
+# Redis are NOT exposed to the host; only Caddy publishes 80/443 and terminates
+# TLS in front of the API. Everything restarts on boot / crash.
+
+name: cron-monitor
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cronmon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-cronmon}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-cronmon} -d ${POSTGRES_DB:-cronmon}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    restart: 'no'
+    command: ['node_modules/.bin/node-pg-migrate', '-j', 'sql', '-m', 'migrations', 'up']
+    env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/server.js']
+    env_file: [.env]
+    volumes:
+      - ./secrets:/app/secrets:ro
+    expose:
+      - '3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/scheduler/main.js']
+    env_file: [.env]
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/workers/main.js']
+    env_file: [.env]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # The dead-man's switch. In a bigger setup, run this on a *separate* host so a
+  # box-wide outage can't silence it too. Its alert path (WATCHDOG_EXTERNAL_ENDPOINT)
+  # must not depend on the API or the primary alert engine.
+  watchdog:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/watchdog/main.js']
+    env_file: [.env]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env, e.g. cron-api.ismartghana.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

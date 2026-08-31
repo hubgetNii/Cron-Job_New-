@@ -1,0 +1,12 @@
+# Reverse proxy + automatic HTTPS (Let's Encrypt) for the API.
+# {$API_DOMAIN} is injected from .env by docker-compose.prod.yml.
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:3000
+
+	header {
+		# The API already sets HSTS / CSP / etc.; just don't leak the server.
+		-Server
+	}
+}

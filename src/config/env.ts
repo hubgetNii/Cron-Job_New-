@@ -21,6 +21,11 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url().startsWith('postgres'),
   REDIS_URL: z.string().url().startsWith('redis'),
 
+  // Browser origins allowed to call the API cross-origin (the dashboard on
+  // Vercel, plus localhost in dev). Comma-separated; "*" allows any origin.
+  // Empty → no CORS headers (same-origin / proxied use only).
+  CORS_ALLOWED_ORIGINS: z.string().optional(),
+
   // Authentication (Phase 9). AUTH_ENABLED=false bypasses auth entirely — only
   // for local dev; the API refuses to start with it off in production.
   AUTH_ENABLED: BoolFromString.default('true'),

@@ -6,6 +6,7 @@ import { logger } from '../lib/logger.js';
 import { appInfo } from '../lib/version.js';
 import { requestContext } from './middleware/request-context.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { cors } from './middleware/cors.js';
 import { authenticate } from './middleware/auth.js';
 import { apiRateLimit } from './middleware/rate-limit.js';
 import { healthRouter } from './routes/health.routes.js';
@@ -31,6 +32,9 @@ export function createApp(): Express {
 
   app.disable('x-powered-by');
   app.set('trust proxy', true);
+
+  // CORS before helmet so preflight OPTIONS get answered without a body.
+  app.use(cors());
 
   app.use(
     helmet({
