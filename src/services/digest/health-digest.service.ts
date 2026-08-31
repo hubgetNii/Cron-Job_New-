@@ -93,8 +93,9 @@ export function composeMessage(s: {
       if (other.length > 0) lines.push(`Also degraded: ${other.join(', ')}.`);
     } else {
       const names = [...down, ...other];
+      const n = names.length;
       lines.push(
-        `${names.length} service${names.length === 1 ? '' : 's'} require attention: ${names.join(', ')}.`,
+        `${n} service${n === 1 ? '' : 's'} ${n === 1 ? 'needs' : 'need'} attention: ${names.join(', ')}.`,
       );
     }
   }

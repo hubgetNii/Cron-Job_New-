@@ -29,7 +29,7 @@ A job in the scheduler process runs every `SMS_DIGEST_INTERVAL_MINUTES`
 iSmart Health – 10:00 AM
 Status: ⚠️ DEGRADED
 18/20 services healthy.
-2 services require attention: Payment API, SMS API.
+2 services need attention: Payment API, SMS API.
 Next check: 10:30 AM.
 ```
 

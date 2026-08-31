@@ -53,7 +53,7 @@ describe('composeMessage', () => {
     });
     expect(msg).toContain('Status: ⚠️ DEGRADED');
     expect(msg).toContain('18/20 services healthy.');
-    expect(msg).toContain('2 services require attention: Payment API, SMS API.');
+    expect(msg).toContain('2 services need attention: Payment API, SMS API.');
     expect(msg).toContain('Next check:');
   });
 
