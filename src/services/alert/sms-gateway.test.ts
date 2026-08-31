@@ -77,11 +77,21 @@ describe('sendSms', () => {
     expect((requestMock.mock.calls[0]![1] as { method: string }).method).toBe('GET');
   });
 
-  it('flags an auth/credit failure returned as HTTP 200', async () => {
+  it('accepts the iSmartGhana success shape (status "S", "Message Submitted")', async () => {
     configure();
     requestMock.mockResolvedValue(
-      res(200, '{"status":"Failed","error":"Invalid API credentials"}'),
+      res(
+        200,
+        '{"message_id":2026083116353908975,"status":"S","remarks":"Message Submitted","uid":"5bf9ba43","phonenumber":"233553476530"}',
+      ),
     );
+    const r = await sendSms({ to: '233553476530', message: 'hi' });
+    expect(r.ok).toBe(true);
+  });
+
+  it('flags a non-success status or failure remark returned as HTTP 200', async () => {
+    configure();
+    requestMock.mockResolvedValue(res(200, '{"status":"F","remarks":"Invalid API credentials"}'));
     const r = await sendSms({ to: '233551530764', message: 'hi' });
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/Invalid API credentials/);

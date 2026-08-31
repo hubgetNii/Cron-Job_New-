@@ -223,5 +223,13 @@ curl -s -X POST localhost:3000/api/v1/health-digests/evaluate \
 ```
 
 Check the scheduler / API log line `SMS gateway response` for the provider's
-raw body — if its success/failure shape differs from what `looksLikeFailure()`
-assumes, tighten that function.
+raw body. Confirmed shape (successful send):
+
+```json
+{ "message_id": 2026083116353908975, "status": "S",
+  "remarks": "Message Submitted", "uid": "5bf9ba43",
+  "phonenumber": "233553476530", "peId": null, "dltTempId": null }
+```
+
+`status: "S"` = accepted. `looksLikeFailure()` treats any `status` not in the
+success set, or a `remarks`/`error` that reads as a failure, as a failed send.

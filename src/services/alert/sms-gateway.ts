@@ -93,10 +93,25 @@ export async function sendSms(input: {
   }
 }
 
+const SUCCESS_STATUS = new Set([
+  's', // iSmartGhana: "S" = Submitted
+  '0',
+  '00',
+  '000',
+  'success',
+  'sent',
+  'ok',
+  'queued',
+  'submitted',
+  'accepted',
+  'delivered',
+]);
+
 /**
- * Conservative failure sniff on a 2xx body — most gateways still return 200 for
- * auth/credit errors. Treats an explicit error flag / message as a failure;
- * anything ambiguous is left as success so we don't hide real sends.
+ * Failure sniff on a 2xx body — the gateway returns 200 even for auth/credit
+ * errors. The iSmartGhana gateway replies `{ "message_id": …, "status": "S",
+ * "remarks": "Message Submitted", … }` on success, so a `status` present and
+ * *not* in the success set (or `remarks` mentioning failure) is a failure.
  */
 function looksLikeFailure(body: string): boolean {
   if (!body) return false;
@@ -111,11 +126,19 @@ function looksLikeFailure(body: string): boolean {
   const str = (v: unknown): string =>
     typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
 
-  const status = str(o['status'] ?? o['Status']).toLowerCase();
-  if (status && /fail|error|invalid|reject/.test(status)) return true;
+  const status = str(o['status'] ?? o['Status'])
+    .toLowerCase()
+    .trim();
+  if (status && !SUCCESS_STATUS.has(status)) return true;
+
+  const remarks = str(o['remarks'] ?? o['Remarks'] ?? o['message'] ?? o['Message']);
+  if (/fail|invalid|reject|denied|insufficient|unauthor|not\s+found/i.test(remarks)) return true;
+
   const code = str(o['ErrorCode'] ?? o['error_code'] ?? o['code']).toLowerCase();
   if (code && !['0', '00', '000', 'success', 'ok', ''].includes(code)) return true;
+
   const err = str(o['error'] ?? o['Error'] ?? o['ErrorMessage'] ?? o['ErrorDescription']);
   if (err && !/success|none|ok/i.test(err)) return true;
+
   return false;
 }
