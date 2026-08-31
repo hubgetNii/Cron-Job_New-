@@ -19,6 +19,10 @@ process.env['ALERT_DEFAULT_CHANNELS'] = 'WEBHOOK';
 process.env['ALERT_DEFAULT_RECIPIENT'] = 'ops';
 process.env['FCM_SERVICE_ACCOUNT_FILE'] = '';
 process.env['FCM_DEFAULT_TOPIC'] = '';
+process.env['SMS_DIGEST_RECIPIENTS'] = '';
+process.env['SMS_DIGEST_TIMEZONE'] = 'UTC';
+process.env['SMS_PROVIDER_URL'] = '';
+process.env['SMS_PROVIDER_API_KEY'] = '';
 
 // Effectively disable HTTP rate limiting in the suite — no test asserts a 429,
 // and the IP-keyed counters otherwise accumulate across the e2e files.

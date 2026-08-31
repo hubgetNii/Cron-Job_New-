@@ -19,6 +19,7 @@ import { configRequestRouter } from './routes/config-request.routes.js';
 import { statusRouter } from './routes/status.routes.js';
 import { aiRouter } from './routes/ai.routes.js';
 import { slaRouter } from './routes/sla.routes.js';
+import { digestRouter } from './routes/digest.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -81,6 +82,7 @@ export function createApp(): Express {
   api.use(dashboardRouter);
   api.use(aiRouter);
   api.use(slaRouter);
+  api.use(digestRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

@@ -7,6 +7,7 @@ import { closeRedis } from '../lib/redis.js';
 import { Scheduler } from '../services/scheduler/scheduler.service.js';
 import { startAlertRunner } from '../services/alert/alert-runner.js';
 import { startReportRunner } from '../services/reporting/report-runner.js';
+import { startDigestRunner } from '../services/digest/digest-runner.js';
 
 const log = componentLogger('scheduler');
 
@@ -21,7 +22,8 @@ async function main(): Promise<void> {
   await scheduler.start();
   const alertRunner = startAlertRunner();
   const reportRunner = startReportRunner();
-  log.info('scheduler running (with escalation, alert delivery + SLA reporting)');
+  const digestRunner = startDigestRunner();
+  log.info('scheduler running (escalation, alert delivery, SLA reporting + SMS health digest)');
 
   // Pick up target create/update/enable/disable without a restart.
   const reloadTimer = setInterval(() => void scheduler.reload(), 30_000);
@@ -31,6 +33,7 @@ async function main(): Promise<void> {
   onShutdown(() => clearInterval(reloadTimer));
   onShutdown(() => alertRunner.stop());
   onShutdown(() => reportRunner.stop());
+  onShutdown(() => digestRunner.stop());
   onShutdown(() => scheduler.stop());
   onShutdown(closePool);
   onShutdown(closeRedis);

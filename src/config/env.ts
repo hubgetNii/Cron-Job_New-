@@ -77,6 +77,19 @@ const EnvSchema = z.object({
   SMS_PROVIDER_URL: z.string().url().optional(),
   SMS_PROVIDER_API_KEY: z.string().optional(),
   ALERT_SMS_TO: z.string().optional(),
+
+  // SMS is a *digest* channel, not an event stream (see vault: "SMS Health
+  // Digest Notifications"). A job snapshots overall system health every
+  // SMS_DIGEST_INTERVAL_MINUTES and sends ONE SMS, and only when the overall
+  // level changes (HEALTHY / DEGRADED / CRITICAL). Recipients is a comma list
+  // of phone numbers.
+  SMS_DIGEST_ENABLED: BoolFromString.default('true'),
+  SMS_DIGEST_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(30),
+  SMS_DIGEST_RECIPIENTS: z.string().optional(),
+  // IANA timezone for the timestamps in the SMS text (e.g. "Africa/Accra").
+  // Unset → the server's local timezone.
+  SMS_DIGEST_TIMEZONE: z.string().optional(),
+  SMS_DIGEST_LABEL: z.string().default('iSmart Health'),
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   ALERT_SLACK_WEBHOOK_URL: z.string().url().optional(),
   WEBHOOK_SIGNING_SECRET: z.string().optional(),

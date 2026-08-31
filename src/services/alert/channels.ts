@@ -15,7 +15,14 @@ const log = componentLogger('alert-channel');
  */
 function loggedFallback(kind: AlertChannel, n: Notification, reason: string): DeliveryResult {
   log.warn(
-    { channel: kind, alertType: n.alertType, severity: n.severity, subject: n.subject, reason },
+    {
+      channel: kind,
+      alertType: n.alertType,
+      severity: n.severity,
+      subject: n.subject,
+      body: n.body || undefined,
+      reason,
+    },
     `alert not delivered (${kind} has no transport) — logged only`,
   );
   return { ok: true, detail: `logged only — ${reason}` };
@@ -149,17 +156,21 @@ class SmsChannel implements Channel {
   readonly kind: AlertChannel = 'SMS';
 
   async send(n: Notification): Promise<DeliveryResult> {
-    const to = env().ALERT_SMS_TO;
+    // The recipient on the notification wins (digest recipients, escalation
+    // tiers); ALERT_SMS_TO is the fallback for one-off per-event SMS.
+    const to = n.recipient && n.recipient !== 'ops' ? n.recipient : env().ALERT_SMS_TO;
     const url = env().SMS_PROVIDER_URL;
     const key = env().SMS_PROVIDER_API_KEY;
     if (!to || !url || !key) {
-      return loggedFallback('SMS', n, 'SMS_PROVIDER_URL/API_KEY/ALERT_SMS_TO not set');
+      return loggedFallback('SMS', n, 'SMS_PROVIDER_URL/API_KEY/recipient not set');
     }
+    // Digest and other summary notifications carry the full text in `body`.
+    const message = n.body && n.body.length > 0 ? n.body : `[${n.severity}] ${n.subject}`;
     try {
       const res = await request(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({ to, message: `[${n.severity}] ${n.subject}` }),
+        body: JSON.stringify({ to, message }),
         signal: AbortSignal.timeout(10_000),
       });
       await res.body.dump();

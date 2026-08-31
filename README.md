@@ -114,8 +114,14 @@ Phase 6 — **incident engine** (`services/incident/`):
 Phase 7 — **alerting & escalation** (`services/alert/`, runs in the scheduler process):
 
 - **Channels**: Webhook (HMAC-signed via `WEBHOOK_SIGNING_SECRET`), Slack, Email
-  (`nodemailer`), SMS (generic provider POST); Teams/Push/Phone log until wired. A channel
-  with no transport configured **logs** the notification rather than dropping it
+  (`nodemailer`), **Push** (Firebase Cloud Messaging — [`docs/firebase-push-setup.md`](./docs/firebase-push-setup.md)),
+  SMS. Teams/Phone log until wired. A channel with no transport configured **logs**
+  the notification rather than dropping it
+- **SMS is a digest channel, not per-event** — a job snapshots overall system health
+  every `SMS_DIGEST_INTERVAL_MINUTES` (default 30) and sends **one** SMS, only when the
+  overall level changes (HEALTHY / DEGRADED / CRITICAL). `health_digests` keeps the full
+  history. `GET /api/v1/health-digests{,/latest,/preview}`, `POST …/evaluate`.
+  [`docs/sms-digest-notifications.md`](./docs/sms-digest-notifications.md)
 - **Escalation engine**: one due tier per cycle per OPEN incident; tier delays measured
   from `started_at`; **stops the moment an incident is acknowledged**; a tier with
   `condition: "is_money_moving"` only fires for money-moving incidents (spec 8.9 tier 4)
@@ -247,13 +253,15 @@ src/
     alert/        channels, escalation, delivery, alert runner
     ai/           advisory analysis + statistical anomaly detection (Phase 10)
     reporting/    SLA computation, report runner, compliance export (Phase 11)
+    digest/       SMS system-health digest (summary channel, state-change only)
   http/           express app, middleware, routes
   scheduler/      scheduler process entrypoint (cron + alerts + SLA reports)
   workers/        BullMQ worker entrypoint (idle stub — the horizontal-scale path)
   watchdog/       independent dead-man's-switch process
   tests/          shared setup + fixtures
 migrations/       node-pg-migrate SQL migrations
-docs/             runbooks (running-locally.md, testing-with-real-endpoints.md)
+docs/             runbooks (running-locally, testing-with-real-endpoints,
+                            firebase-push-setup, sms-digest-notifications)
 ```
 
 Layering is enforced: **Controller → Service → Repository → Database**. Business logic
