@@ -22,6 +22,8 @@ const redactPaths = [
   '*.token',
   '*.api_password',
   '*.apiPassword',
+  '*.SMTP_PASSWORD',
+  '*.SMS_API_PASSWORD',
   '*.encrypted_credentials',
   'credentials',
 ];
