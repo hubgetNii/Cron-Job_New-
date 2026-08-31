@@ -20,6 +20,7 @@ compliance reporting with a public status page sit on top. 153 tests, 0 vulnerab
 The dashboard is a separate app in [`web/`](./web) — Vite + React + Tailwind v4 + shadcn/ui,
 polling this API every 10s. `cd web && npm run dev`.
 
+**Running it locally** (four processes + common errors): [`docs/running-locally.md`](./docs/running-locally.md).
 **Trying it against live endpoints:** [`docs/testing-with-real-endpoints.md`](./docs/testing-with-real-endpoints.md).
 
 Phase 1:
@@ -252,7 +253,7 @@ src/
   watchdog/       independent dead-man's-switch process
   tests/          shared setup + fixtures
 migrations/       node-pg-migrate SQL migrations
-docs/             runbooks (see testing-with-real-endpoints.md)
+docs/             runbooks (running-locally.md, testing-with-real-endpoints.md)
 ```
 
 Layering is enforced: **Controller → Service → Repository → Database**. Business logic
