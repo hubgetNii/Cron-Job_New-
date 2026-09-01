@@ -4,6 +4,8 @@ import { Download, Eye, EyeOff, Search } from 'lucide-react';
 import {
   useHealthCheckRun,
   useHealthCheckRuns,
+  useLatency,
+  useLatencyAll,
   useTrace,
   useTraces,
 } from '@/lib/queries';
@@ -16,11 +18,98 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { HealthBadge } from '@/components/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type {
+  LatencyAssessment,
   RawTrace,
   SystemHealthLevel,
   TraceRow,
   TraceSearchParams,
 } from '@/lib/types';
+
+const ASSESS_COLOR: Record<LatencyAssessment, string> = {
+  NORMAL: 'var(--color-up)',
+  ELEVATED: 'var(--color-series-1)',
+  HIGH: 'var(--color-degraded)',
+  CRITICAL: 'var(--color-down)',
+  NO_DATA: 'var(--color-unknown)',
+};
+
+function AssessPill({ a }: { a: LatencyAssessment }) {
+  return (
+    <span
+      className="rounded-full border px-2 py-0.5 text-xs font-semibold"
+      style={{ color: ASSESS_COLOR[a], borderColor: 'var(--color-border)' }}
+    >
+      {a === 'NO_DATA' ? 'no data' : a}
+    </span>
+  );
+}
+
+const ms = (v: number | null): string => (v == null ? '—' : `${v.toLocaleString()} ms`);
+
+function LatencyDetail({ apiId }: { apiId: string }) {
+  const { data: s, isLoading } = useLatency(apiId);
+  if (isLoading || !s) return <Skeleton className="h-80 w-full" />;
+  const dev = s.deviationPercent;
+  return (
+    <div className="space-y-4 overflow-y-auto">
+      <div>
+        <SheetTitle>{s.targetName}</SheetTitle>
+        <SheetDescription>
+          {s.endpointClass} · last {s.window.minutes} min · {s.window.samples} samples
+        </SheetDescription>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <AssessPill a={s.assessment} />
+        {dev != null && (
+          <span
+            className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs tabular-nums"
+            style={{ color: dev > 0 ? 'var(--color-down)' : 'var(--color-up)' }}
+          >
+            {dev > 0 ? '+' : ''}
+            {dev}% vs {s.baseline.days}-day baseline
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-3 text-sm">
+        {(
+          [
+            ['Current', s.current],
+            ['Average', s.avg],
+            ['Baseline', s.baseline.avgMs],
+            ['Min', s.min],
+            ['Max', s.max],
+            ['P50', s.p50],
+            ['P90', s.p90],
+            ['P95', s.p95],
+            ['P99', s.p99],
+          ] as const
+        ).map(([label, val]) => (
+          <div key={label} className="rounded-md border border-[var(--color-border)] p-2">
+            <div className="text-xs text-[var(--color-text-faint)]">{label}</div>
+            <div className="tabular-nums">{ms(val)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="rounded-md border border-[var(--color-border)] p-3 text-sm">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-xs uppercase tracking-wide text-[var(--color-text-faint)]">
+            Thresholds
+          </span>
+          <span className="text-xs text-[var(--color-text-faint)]">{s.thresholds.source}</span>
+        </div>
+        <div className="flex gap-4 tabular-nums">
+          <span style={{ color: 'var(--color-up)' }}>normal &lt; {ms(s.thresholds.normalMs)}</span>
+          <span style={{ color: 'var(--color-degraded)' }}>
+            high ≥ {ms(s.thresholds.degradedMs)}
+          </span>
+          <span style={{ color: 'var(--color-down)' }}>
+            critical ≥ {ms(s.thresholds.criticalMs)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const LEVEL_COLOR: Record<SystemHealthLevel, string> = {
   HEALTHY: 'var(--color-up)',
@@ -291,7 +380,9 @@ export function ObservabilityPage() {
   const [params, setParams] = useSearchParams();
   const openCheckId = params.get('check');
   const openHcId = params.get('hc');
+  const openLatId = params.get('lat');
   const runs = useHealthCheckRuns(20);
+  const latency = useLatencyAll();
   const [q, setQ] = useState(params.get('q') ?? '');
   const [statusClass, setStatusClass] = useState(params.get('statusClass') ?? '');
   const [health, setHealth] = useState(params.get('healthStatus') ?? '');
@@ -328,6 +419,13 @@ export function ObservabilityPage() {
     const next = new URLSearchParams(params);
     if (hcId) next.set('hc', hcId);
     else next.delete('hc');
+    setParams(next);
+  };
+
+  const setOpenLat = (apiId: string | null): void => {
+    const next = new URLSearchParams(params);
+    if (apiId) next.set('lat', apiId);
+    else next.delete('lat');
     setParams(next);
   };
 
@@ -398,6 +496,70 @@ export function ObservabilityPage() {
               <TR>
                 <TD colSpan={9} className="py-8 text-center text-[var(--color-text-faint)]">
                   No runs yet — the roll-up job records one every few minutes once checks are flowing.
+                </TD>
+              </TR>
+            )}
+          </TBody>
+        </Table>
+      </Card>
+
+      <Card>
+        <div className="border-b border-[var(--color-border)] px-4 py-2.5 text-sm font-medium">
+          Latency intelligence
+          <span className="ml-2 text-xs font-normal text-[var(--color-text-faint)]">
+            P50–P99 over the last hour · assessment from P95 vs per-API bands
+          </span>
+        </div>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Service</TH>
+              <TH>Assessment</TH>
+              <TH className="text-right">Current</TH>
+              <TH className="text-right">P95</TH>
+              <TH className="text-right">P99</TH>
+              <TH className="text-right">Baseline</TH>
+              <TH className="text-right">Deviation</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {(latency.data ?? []).map((l) => (
+              <TR key={l.apiId} className="cursor-pointer" onClick={() => setOpenLat(l.apiId)}>
+                <TD className="font-medium">{l.targetName}</TD>
+                <TD>
+                  <AssessPill a={l.assessment} />
+                </TD>
+                <TD className="text-right tabular-nums">{ms(l.current)}</TD>
+                <TD className="text-right tabular-nums">{ms(l.p95)}</TD>
+                <TD className="text-right tabular-nums text-[var(--color-text-faint)]">
+                  {ms(l.p99)}
+                </TD>
+                <TD className="text-right tabular-nums text-[var(--color-text-faint)]">
+                  {ms(l.baseline.avgMs)}
+                </TD>
+                <TD
+                  className="text-right tabular-nums"
+                  style={{
+                    color:
+                      l.deviationPercent == null
+                        ? undefined
+                        : l.deviationPercent > 50
+                          ? 'var(--color-down)'
+                          : l.deviationPercent > 15
+                            ? 'var(--color-degraded)'
+                            : 'var(--color-text-muted)',
+                  }}
+                >
+                  {l.deviationPercent == null
+                    ? '—'
+                    : `${l.deviationPercent > 0 ? '+' : ''}${l.deviationPercent}%`}
+                </TD>
+              </TR>
+            ))}
+            {!latency.isLoading && (latency.data ?? []).length === 0 && (
+              <TR>
+                <TD colSpan={7} className="py-8 text-center text-[var(--color-text-faint)]">
+                  No active targets.
                 </TD>
               </TR>
             )}
@@ -560,6 +722,10 @@ export function ObservabilityPage() {
 
       <Sheet open={openHcId != null} onOpenChange={(o) => !o && setOpenHc(null)}>
         <SheetContent>{openHcId && <RunDetail hcId={openHcId} />}</SheetContent>
+      </Sheet>
+
+      <Sheet open={openLatId != null} onOpenChange={(o) => !o && setOpenLat(null)}>
+        <SheetContent>{openLatId && <LatencyDetail apiId={openLatId} />}</SheetContent>
       </Sheet>
     </div>
   );

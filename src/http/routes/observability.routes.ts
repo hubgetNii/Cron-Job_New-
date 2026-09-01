@@ -1,8 +1,14 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
-import { actorFromRequest } from '../actor.js';
+import { actorFromRequest, realUserId } from '../actor.js';
 import { recordAudit } from '../../services/audit/audit.service.js';
+import { allLatencyStats, latencyStats } from '../../services/observability/latency-stats.service.js';
+import {
+  deleteThresholds,
+  getThresholds,
+  upsertThresholds,
+} from '../../repositories/latency-thresholds.repo.js';
 import {
   getTraceByCheckId,
   revealRawTrace,
@@ -30,6 +36,78 @@ export const observabilityRouter: Router = Router();
 const canView = requireRole('OPERATOR', 'ADMIN', 'DEVELOPER', 'COMPLIANCE');
 const idParam = z.string().uuid();
 const hcIdParam = z.string().regex(/^HC-\d{8}-\d{6}-\d{6}$/);
+
+/* ── Latency intelligence (spec §6) ─────────────────────────────────────── */
+
+const windowQuery = z.object({
+  windowMinutes: z.coerce.number().int().min(5).max(10080).optional(),
+});
+
+observabilityRouter.get('/observability/latency', canView, async (req: Request, res: Response) => {
+  const { windowMinutes } = windowQuery.parse(req.query);
+  const stats = await allLatencyStats(windowMinutes);
+  res.json({ data: stats, count: stats.length });
+});
+
+observabilityRouter.get(
+  '/observability/latency/:apiId',
+  canView,
+  async (req: Request, res: Response) => {
+    const { windowMinutes } = windowQuery.parse(req.query);
+    res.json({ data: await latencyStats(idParam.parse(req.params.apiId), windowMinutes) });
+  },
+);
+
+const thresholdBody = z.object({
+  normalMs: z.number().int().positive(),
+  degradedMs: z.number().int().positive(),
+  criticalMs: z.number().int().positive(),
+});
+
+observabilityRouter.put(
+  '/observability/latency/:apiId/thresholds',
+  requireRole('ADMIN'),
+  async (req: Request, res: Response) => {
+    const apiId = idParam.parse(req.params.apiId);
+    const t = thresholdBody.parse(req.body);
+    if (!(t.degradedMs > t.normalMs && t.criticalMs > t.degradedMs)) {
+      res.status(422).json({
+        error: { code: 'VALIDATION', message: 'need normalMs < degradedMs < criticalMs' },
+      });
+      return;
+    }
+    const before = await getThresholds(apiId);
+    const row = await upsertThresholds(apiId, t, realUserId(req));
+    await recordAudit({
+      actor: actorFromRequest(req),
+      action: 'latency_thresholds.set',
+      entityType: 'monitored_api',
+      entityId: apiId,
+      summary: `Latency bands → ${t.normalMs}/${t.degradedMs}/${t.criticalMs} ms`,
+      changes: { before, after: row },
+    });
+    res.json({ data: row });
+  },
+);
+
+observabilityRouter.delete(
+  '/observability/latency/:apiId/thresholds',
+  requireRole('ADMIN'),
+  async (req: Request, res: Response) => {
+    const apiId = idParam.parse(req.params.apiId);
+    const removed = await deleteThresholds(apiId);
+    if (removed) {
+      await recordAudit({
+        actor: actorFromRequest(req),
+        action: 'latency_thresholds.cleared',
+        entityType: 'monitored_api',
+        entityId: apiId,
+        summary: 'Reverted to class-default latency bands',
+      });
+    }
+    res.status(removed ? 204 : 404).send();
+  },
+);
 
 /* ── Health Check Runs (spec §2) ────────────────────────────────────────── */
 

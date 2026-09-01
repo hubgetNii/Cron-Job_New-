@@ -303,6 +303,32 @@ export interface HealthCheckRunDetail extends HealthCheckRun {
   services: RunServiceRow[];
 }
 
+export type LatencyAssessment = 'NORMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL' | 'NO_DATA';
+
+export interface LatencyStats {
+  apiId: string;
+  targetName: string;
+  endpointClass: string;
+  window: { minutes: number; samples: number };
+  current: number | null;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+  p50: number | null;
+  p90: number | null;
+  p95: number | null;
+  p99: number | null;
+  baseline: { days: number; avgMs: number | null };
+  deviationPercent: number | null;
+  thresholds: {
+    normalMs: number;
+    degradedMs: number;
+    criticalMs: number;
+    source: 'custom' | 'default';
+  };
+  assessment: LatencyAssessment;
+}
+
 export interface RawTrace {
   requestUrl: string;
   requestHeaders: Record<string, string>;

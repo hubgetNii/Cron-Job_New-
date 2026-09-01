@@ -122,6 +122,16 @@ export const useHealthCheckRun = (hcId: string | null) =>
     enabled: hcId != null,
   });
 
+export const useLatencyAll = () =>
+  useQuery({ queryKey: ['latency-all'], queryFn: api.latencyAll, refetchInterval: LIVE });
+
+export const useLatency = (apiId: string | null) =>
+  useQuery({
+    queryKey: ['latency', apiId],
+    queryFn: () => api.latency(apiId!),
+    enabled: apiId != null,
+  });
+
 export const useSlaSummary = () =>
   useQuery({ queryKey: ['sla-summary'], queryFn: api.slaSummary, refetchInterval: 30_000 });
 
