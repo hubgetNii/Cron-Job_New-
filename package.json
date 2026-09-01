@@ -14,6 +14,7 @@
     "dev:watchdog": "tsx watch src/watchdog/main.ts",
     "create-admin": "tsx src/scripts/create-admin.ts",
     "seed:mpsms": "tsx src/scripts/seed-mpsms.ts",
+    "demo:reset": "tsx src/scripts/reset-and-seed-demo.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Download, Eye, EyeOff, Search } from 'lucide-react';
-import { useTrace, useTraces } from '@/lib/queries';
+import {
+  useHealthCheckRun,
+  useHealthCheckRuns,
+  useTrace,
+  useTraces,
+} from '@/lib/queries';
 import { api, downloadWithAuth, traceQuery } from '@/lib/api';
 import { authStore } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
@@ -10,7 +15,92 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { HealthBadge } from '@/components/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { RawTrace, TraceRow, TraceSearchParams } from '@/lib/types';
+import type {
+  RawTrace,
+  SystemHealthLevel,
+  TraceRow,
+  TraceSearchParams,
+} from '@/lib/types';
+
+const LEVEL_COLOR: Record<SystemHealthLevel, string> = {
+  HEALTHY: 'var(--color-up)',
+  DEGRADED: 'var(--color-degraded)',
+  CRITICAL: 'var(--color-down)',
+};
+
+function LevelPill({ level }: { level: SystemHealthLevel }) {
+  return (
+    <span
+      className="rounded-full border px-2 py-0.5 text-xs font-semibold"
+      style={{ color: LEVEL_COLOR[level], borderColor: 'var(--color-border)' }}
+    >
+      {level}
+    </span>
+  );
+}
+
+function RunDetail({ hcId }: { hcId: string }) {
+  const { data: run, isLoading } = useHealthCheckRun(hcId);
+  if (isLoading || !run) return <Skeleton className="h-96 w-full" />;
+  return (
+    <div className="space-y-4 overflow-y-auto">
+      <div>
+        <SheetTitle className="font-mono text-sm">{run.hcId}</SheetTitle>
+        <SheetDescription>
+          {new Date(run.windowStart).toLocaleTimeString()} –{' '}
+          {new Date(run.windowEnd).toLocaleTimeString()}
+          {run.environment ? ` · ${run.environment}` : ''}
+        </SheetDescription>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <LevelPill level={run.overallStatus} />
+        <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 tabular-nums">
+          {run.servicesTested} tested
+        </span>
+        <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 tabular-nums text-[var(--color-up)]">
+          {run.healthy} healthy
+        </span>
+        <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 tabular-nums text-[var(--color-degraded)]">
+          {run.degraded} degraded
+        </span>
+        <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 tabular-nums text-[var(--color-down)]">
+          {run.failed} failed
+        </span>
+        {run.durationMs != null && (
+          <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 tabular-nums">
+            {(run.durationMs / 1000).toFixed(2)}s check time · {run.checksTotal} checks
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+        <table className="w-full text-xs">
+          <tbody>
+            {run.services.map((s) => (
+              <tr key={s.checkId} className="border-b border-[var(--color-border)] last:border-0">
+                <td className="px-2 py-1.5">
+                  <HealthBadge status={s.status} />
+                </td>
+                <td className="px-2 py-1.5 font-medium">
+                  {s.targetName}
+                  {s.isMoneyMoving && (
+                    <span className="ml-1 text-[var(--color-degraded)]">·$</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--color-text-muted)]">
+                  {s.httpStatus ?? '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {s.responseTimeMs ?? '—'} ms
+                </td>
+                <td className="px-2 py-1.5 text-[var(--color-text-muted)]">{s.errorType ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 const RANGES: Record<string, number> = {
   '30m': 30 * 60_000,
@@ -200,6 +290,8 @@ function TraceDetail({ checkId }: { checkId: string }) {
 export function ObservabilityPage() {
   const [params, setParams] = useSearchParams();
   const openCheckId = params.get('check');
+  const openHcId = params.get('hc');
+  const runs = useHealthCheckRuns(20);
   const [q, setQ] = useState(params.get('q') ?? '');
   const [statusClass, setStatusClass] = useState(params.get('statusClass') ?? '');
   const [health, setHealth] = useState(params.get('healthStatus') ?? '');
@@ -232,6 +324,13 @@ export function ObservabilityPage() {
     setParams(next);
   };
 
+  const setOpenHc = (hcId: string | null): void => {
+    const next = new URLSearchParams(params);
+    if (hcId) next.set('hc', hcId);
+    else next.delete('hc');
+    setParams(next);
+  };
+
   async function exportCsv(): Promise<void> {
     const { limit: _l, offset: _o, ...rest } = search;
     await downloadWithAuth(
@@ -251,6 +350,60 @@ export function ObservabilityPage() {
           <Download className="mr-1 size-4" /> Download CSV
         </Button>
       </div>
+
+      <Card>
+        <div className="border-b border-[var(--color-border)] px-4 py-2.5 text-sm font-medium">
+          Health check runs
+          <span className="ml-2 text-xs font-normal text-[var(--color-text-faint)]">
+            every {'~'}5 min · click for the per-service breakdown
+          </span>
+        </div>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Health Check ID</TH>
+              <TH>Window end</TH>
+              <TH>Env</TH>
+              <TH>Status</TH>
+              <TH className="text-right">Tested</TH>
+              <TH className="text-right">Healthy</TH>
+              <TH className="text-right">Degraded</TH>
+              <TH className="text-right">Failed</TH>
+              <TH className="text-right">Check time</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {(runs.data ?? []).map((r) => (
+              <TR key={r.id} className="cursor-pointer" onClick={() => setOpenHc(r.hcId)}>
+                <TD className="font-mono text-xs">{r.hcId}</TD>
+                <TD className="whitespace-nowrap text-xs text-[var(--color-text-faint)]">
+                  {new Date(r.windowEnd).toLocaleString()}
+                </TD>
+                <TD className="text-xs text-[var(--color-text-muted)]">{r.environment ?? 'mixed'}</TD>
+                <TD>
+                  <LevelPill level={r.overallStatus} />
+                </TD>
+                <TD className="text-right tabular-nums">{r.servicesTested}</TD>
+                <TD className="text-right tabular-nums text-[var(--color-up)]">{r.healthy}</TD>
+                <TD className="text-right tabular-nums text-[var(--color-degraded)]">
+                  {r.degraded}
+                </TD>
+                <TD className="text-right tabular-nums text-[var(--color-down)]">{r.failed}</TD>
+                <TD className="text-right tabular-nums text-[var(--color-text-faint)]">
+                  {r.durationMs != null ? `${(r.durationMs / 1000).toFixed(2)}s` : '—'}
+                </TD>
+              </TR>
+            ))}
+            {!runs.isLoading && (runs.data ?? []).length === 0 && (
+              <TR>
+                <TD colSpan={9} className="py-8 text-center text-[var(--color-text-faint)]">
+                  No runs yet — the roll-up job records one every few minutes once checks are flowing.
+                </TD>
+              </TR>
+            )}
+          </TBody>
+        </Table>
+      </Card>
 
       <Card className="flex flex-wrap items-end gap-3 p-3">
         <label className="flex-1 text-xs text-[var(--color-text-faint)]">
@@ -403,6 +556,10 @@ export function ObservabilityPage() {
 
       <Sheet open={openCheckId != null} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent>{openCheckId && <TraceDetail checkId={openCheckId} />}</SheetContent>
+      </Sheet>
+
+      <Sheet open={openHcId != null} onOpenChange={(o) => !o && setOpenHc(null)}>
+        <SheetContent>{openHcId && <RunDetail hcId={openHcId} />}</SheetContent>
       </Sheet>
     </div>
   );

@@ -9,6 +9,7 @@ import { startAlertRunner } from '../services/alert/alert-runner.js';
 import { startReportRunner } from '../services/reporting/report-runner.js';
 import { startDigestRunner } from '../services/digest/digest-runner.js';
 import { startTraceRetention } from '../services/observability/trace-retention.js';
+import { startHealthCheckRunRunner } from '../services/observability/health-check-run-runner.js';
 
 const log = componentLogger('scheduler');
 
@@ -25,7 +26,10 @@ async function main(): Promise<void> {
   const reportRunner = startReportRunner();
   const digestRunner = startDigestRunner();
   const traceRetention = startTraceRetention();
-  log.info('scheduler running (escalation, alert delivery, SLA reporting, SMS health digest, trace retention)');
+  const runRoller = startHealthCheckRunRunner();
+  log.info(
+    'scheduler running (escalation, alert delivery, SLA reporting, SMS health digest, trace retention, health-check runs)',
+  );
 
   // Pick up target create/update/enable/disable without a restart.
   const reloadTimer = setInterval(() => void scheduler.reload(), 30_000);
@@ -37,6 +41,7 @@ async function main(): Promise<void> {
   onShutdown(() => reportRunner.stop());
   onShutdown(() => digestRunner.stop());
   onShutdown(() => traceRetention.stop());
+  onShutdown(() => runRoller.stop());
   onShutdown(() => scheduler.stop());
   onShutdown(closePool);
   onShutdown(closeRedis);

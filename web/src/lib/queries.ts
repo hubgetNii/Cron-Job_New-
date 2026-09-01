@@ -108,6 +108,20 @@ export const useTrace = (checkId: string | null) =>
     enabled: checkId != null,
   });
 
+export const useHealthCheckRuns = (limit = 30) =>
+  useQuery({
+    queryKey: ['health-check-runs', limit],
+    queryFn: () => api.healthCheckRuns(limit),
+    refetchInterval: LIVE,
+  });
+
+export const useHealthCheckRun = (hcId: string | null) =>
+  useQuery({
+    queryKey: ['health-check-run', hcId],
+    queryFn: () => api.healthCheckRun(hcId!),
+    enabled: hcId != null,
+  });
+
 export const useSlaSummary = () =>
   useQuery({ queryKey: ['sla-summary'], queryFn: api.slaSummary, refetchInterval: 30_000 });
 

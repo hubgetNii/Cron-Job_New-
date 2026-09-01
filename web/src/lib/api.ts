@@ -10,6 +10,8 @@ import type {
   IncidentAnalysis,
   MissedRun,
   PerfBucket,
+  HealthCheckRun,
+  HealthCheckRunDetail,
   PublicStatus,
   RawTrace,
   RootCauseAnalysis,
@@ -182,6 +184,12 @@ export const api = {
     ).then((r) => ({ rows: r.data, total: r.total })),
   trace: (checkId: string) =>
     req<Wrapped<TraceRow>>(`/observability/traces/${checkId}`).then((r) => r.data),
+  healthCheckRuns: (limit = 30) =>
+    req<Wrapped<HealthCheckRun[]>>(`/observability/health-checks?limit=${limit}`).then(
+      (r) => r.data,
+    ),
+  healthCheckRun: (hcId: string) =>
+    req<Wrapped<HealthCheckRunDetail>>(`/observability/health-checks/${hcId}`).then((r) => r.data),
   revealTrace: (checkId: string) =>
     req<Wrapped<RawTrace>>(`/observability/traces/${checkId}/raw`).then((r) => r.data),
 

@@ -59,6 +59,10 @@ const EnvSchema = z.object({
   // Observability traces (Phase 12). Retention in days; the prune runs hourly.
   TRACE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
+  // Health Check Runs (Phase 13). Roll-up window + retention.
+  HEALTH_CHECK_RUN_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
+  HEALTH_CHECK_RUN_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
   // Reporting (Phase 11).
   SLA_REPORT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
   STATUS_PAGE_ENABLED: BoolFromString.default('true'),

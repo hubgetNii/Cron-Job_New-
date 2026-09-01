@@ -266,6 +266,43 @@ export interface TraceRow {
   hasRaw: boolean;
 }
 
+export type SystemHealthLevel = 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+
+export interface HealthCheckRun {
+  id: string;
+  hcId: string;
+  windowStart: string;
+  windowEnd: string;
+  environment: string | null;
+  servicesTested: number;
+  healthy: number;
+  degraded: number;
+  failed: number;
+  unknown: number;
+  checksTotal: number;
+  overallStatus: SystemHealthLevel;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface RunServiceRow {
+  checkId: string;
+  apiId: string;
+  targetName: string;
+  endpointClass: string;
+  isMoneyMoving: boolean;
+  status: HealthStatus;
+  httpStatus: number | null;
+  responseTimeMs: number | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  checkedAt: string;
+}
+
+export interface HealthCheckRunDetail extends HealthCheckRun {
+  services: RunServiceRow[];
+}
+
 export interface RawTrace {
   requestUrl: string;
   requestHeaders: Record<string, string>;

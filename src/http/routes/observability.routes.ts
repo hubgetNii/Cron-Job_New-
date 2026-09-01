@@ -9,6 +9,12 @@ import {
   searchTraces,
   type TraceRow,
 } from '../../repositories/health-check-traces.repo.js';
+import {
+  getRunByHcId,
+  listRuns,
+  runServices,
+} from '../../repositories/health-check-runs.repo.js';
+import { rollUpRun } from '../../services/observability/health-check-run.service.js';
 import { CHECK_FAILURE_TYPES, HEALTH_STATUSES } from '../../domain/enums.js';
 
 /**
@@ -23,6 +29,42 @@ export const observabilityRouter: Router = Router();
 
 const canView = requireRole('OPERATOR', 'ADMIN', 'DEVELOPER', 'COMPLIANCE');
 const idParam = z.string().uuid();
+const hcIdParam = z.string().regex(/^HC-\d{8}-\d{6}-\d{6}$/);
+
+/* ── Health Check Runs (spec §2) ────────────────────────────────────────── */
+
+observabilityRouter.get(
+  '/observability/health-checks',
+  canView,
+  async (req: Request, res: Response) => {
+    const limit = z.coerce.number().int().min(1).max(200).optional().parse(req.query.limit);
+    const runs = await listRuns(limit ?? 50);
+    res.json({ data: runs, count: runs.length });
+  },
+);
+
+observabilityRouter.post(
+  '/observability/health-checks/roll-up',
+  requireRole('ADMIN', 'OPERATOR'),
+  async (_req: Request, res: Response) => {
+    const run = await rollUpRun();
+    res.json({ data: run });
+  },
+);
+
+observabilityRouter.get(
+  '/observability/health-checks/:hcId',
+  canView,
+  async (req: Request, res: Response) => {
+    const run = await getRunByHcId(hcIdParam.parse(req.params.hcId));
+    if (!run) {
+      res.status(404).json({ error: { message: 'No such health check run', code: 'NOT_FOUND' } });
+      return;
+    }
+    const services = await runServices(run.id);
+    res.json({ data: { ...run, services } });
+  },
+);
 
 const searchQuery = z.object({
   apiId: z.string().uuid().optional(),
