@@ -55,6 +55,15 @@ export async function digestContacts(channel: ContactChannel): Promise<Notificat
   return (rows as Array<Record<string, unknown>>).map(toDomain);
 }
 
+/** Active contacts that want an alert for every incident (open / flapping / recovery). */
+export async function incidentAlertContacts(): Promise<NotificationContact[]> {
+  const { rows } = await query(
+    `SELECT ${COLUMNS} FROM notification_contacts
+     WHERE is_active AND incident_alerts ORDER BY channel, address`,
+  );
+  return (rows as Array<Record<string, unknown>>).map(toDomain);
+}
+
 export async function getContact(id: string): Promise<NotificationContact | null> {
   const { rows } = await query(`SELECT ${COLUMNS} FROM notification_contacts WHERE id = $1`, [id]);
   return rows[0] ? toDomain(rows[0]) : null;

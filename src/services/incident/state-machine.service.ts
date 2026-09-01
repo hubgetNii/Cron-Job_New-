@@ -14,14 +14,18 @@ import {
   resolveIncident,
 } from '../../repositories/incidents.repo.js';
 import { recordAlert } from '../../repositories/scheduler.repo.js';
+import { incidentAlertContacts } from '../../repositories/notification-contacts.repo.js';
 import { queueRecoveryAlerts } from '../alert/recovery.js';
 
 const log = componentLogger('incident');
 
 /**
- * Queues one automatic alert per configured default channel (ALERT_DEFAULT_CHANNELS,
- * e.g. "WEBHOOK,PUSH") to the default recipient. The delivery cycle then routes
- * each to its transport.
+ * Queues the automatic alerts for an incident event:
+ *  - one per configured default channel (ALERT_DEFAULT_CHANNELS, e.g.
+ *    "WEBHOOK,PUSH") to the default recipient, and
+ *  - one per `notification_contacts` row with `incident_alerts = true`, on that
+ *    contact's own channel (EMAIL / SMS) to its address.
+ * The delivery cycle then routes each to its transport.
  */
 async function recordDefaultAlerts(
   input: {
@@ -35,6 +39,12 @@ async function recordDefaultAlerts(
   const recipient = env().ALERT_DEFAULT_RECIPIENT;
   for (const channel of env().ALERT_DEFAULT_CHANNELS) {
     await recordAlert({ ...input, channel, recipient }, client);
+  }
+  for (const contact of await incidentAlertContacts()) {
+    await recordAlert(
+      { ...input, channel: contact.channel, recipient: contact.address },
+      client,
+    );
   }
 }
 

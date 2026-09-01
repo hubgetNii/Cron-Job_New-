@@ -15,8 +15,10 @@ import {
 
 /**
  * The standing list of email addresses and phone numbers that receive
- * notifications — the digest (system-health summary) and, later, per-incident
- * alerts. See vault: "SMS Health Digest Notifications".
+ * notifications: the digest / hourly status summary (`digest`), and — for rows
+ * with `incident_alerts = true` — an alert on the contact's own channel every
+ * time an incident opens, flaps or recovers. See vault: "SMS Health Digest
+ * Notifications".
  */
 export const notificationContactsRouter: Router = Router();
 

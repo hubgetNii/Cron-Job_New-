@@ -81,6 +81,7 @@ describe.skipIf(!dbUp)('incident state machine (Phase 6)', () => {
     });
   });
   afterAll(async () => {
+    await query(`DELETE FROM notification_contacts`);
     await query(`DELETE FROM monitored_apis`);
     await closePool();
   });
@@ -88,6 +89,7 @@ describe.skipIf(!dbUp)('incident state machine (Phase 6)', () => {
     await query(`DELETE FROM alerts`);
     await query(`DELETE FROM incidents`);
     await query(`DELETE FROM health_check_results`);
+    await query(`DELETE FROM notification_contacts`);
     await query(
       `UPDATE target_schedule_state SET consecutive_successes = 0, consecutive_failures = 0 WHERE target_id = $1`,
       [target.id],
@@ -109,6 +111,37 @@ describe.skipIf(!dbUp)('incident state machine (Phase 6)', () => {
       [target.id],
     );
     expect(alerts.rowCount).toBe(1);
+  });
+
+  it('also alerts every incident_alerts contact on its own channel, then on recovery', async () => {
+    await query(
+      `INSERT INTO notification_contacts (name, channel, address, digest, incident_alerts)
+       VALUES ('Ibrahim', 'SMS', '233553476530', true, true),
+              ('Ibrahim', 'SMS', '233272900200', true, true),
+              ('Ops', 'EMAIL', 'ops@ismartghana.com', false, true),
+              ('Muted', 'SMS', '233000000000', true, false)`,
+    );
+
+    await runCheck('DOWN');
+    const open = await query<{ channel: string; recipient: string }>(
+      `SELECT channel, recipient FROM alerts WHERE api_id = $1 AND alert_type = 'API_DOWN'`,
+      [target.id],
+    );
+    const pairs = open.rows.map((r) => `${r.channel}:${r.recipient}`);
+    expect(pairs).toContain('SMS:233553476530');
+    expect(pairs).toContain('SMS:233272900200');
+    expect(pairs).toContain('EMAIL:ops@ismartghana.com');
+    expect(pairs).not.toContain('SMS:233000000000'); // incident_alerts = false
+
+    await runCheck('UP');
+    await runCheck('UP'); // recovery streak
+    const recovered = await query<{ recipient: string }>(
+      `SELECT recipient FROM alerts WHERE api_id = $1 AND alert_type = 'API_RECOVERED'`,
+      [target.id],
+    );
+    const recips = recovered.rows.map((r) => r.recipient);
+    expect(recips).toContain('233553476530');
+    expect(recips).toContain('233272900200');
   });
 
   it('increments failure_count without opening a second incident', async () => {

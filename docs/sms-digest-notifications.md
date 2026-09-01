@@ -244,8 +244,12 @@ address:
 | `address` | email address or phone number |
 | `digest` | receives the health digest (default true) |
 | `digest_every_run` | `true` → every run (a full-status heartbeat); `false` → only on a level change (Rule A) |
-| `incident_alerts` | receives per-incident alerts (future) |
+| `incident_alerts` | `true` → also gets an alert on this contact's channel every time an incident **opens**, is flagged **flapping**, or **recovers** (in addition to `ALERT_DEFAULT_CHANNELS`). Independent of `digest`. |
 | `is_active` | soft on/off |
+
+> `incident_alerts` is per-incident, not per-check — one alert on open, one on
+> recovery. It rides the normal alert delivery cycle (maintenance windows still
+> suppress it). For SMS the text is the incident subject + failure type + count.
 
 Managed via the API (ADMIN):
 
