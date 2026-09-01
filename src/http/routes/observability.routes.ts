@@ -5,6 +5,10 @@ import { actorFromRequest, realUserId } from '../actor.js';
 import { recordAudit } from '../../services/audit/audit.service.js';
 import { allLatencyStats, latencyStats } from '../../services/observability/latency-stats.service.js';
 import {
+  allHealthScores,
+  serviceHealthScore,
+} from '../../services/observability/health-score.service.js';
+import {
   deleteThresholds,
   getThresholds,
   upsertThresholds,
@@ -55,6 +59,31 @@ observabilityRouter.get(
   async (req: Request, res: Response) => {
     const { windowMinutes } = windowQuery.parse(req.query);
     res.json({ data: await latencyStats(idParam.parse(req.params.apiId), windowMinutes) });
+  },
+);
+
+/* ── Service health score (spec §10–11) ─────────────────────────────────── */
+
+const scoreQuery = z.object({
+  windowHours: z.coerce.number().int().min(1).max(168).optional(),
+});
+
+observabilityRouter.get(
+  '/observability/health-score',
+  canView,
+  async (req: Request, res: Response) => {
+    const { windowHours } = scoreQuery.parse(req.query);
+    const scores = await allHealthScores(windowHours);
+    res.json({ data: scores, count: scores.length });
+  },
+);
+
+observabilityRouter.get(
+  '/observability/health-score/:apiId',
+  canView,
+  async (req: Request, res: Response) => {
+    const { windowHours } = scoreQuery.parse(req.query);
+    res.json({ data: await serviceHealthScore(idParam.parse(req.params.apiId), windowHours) });
   },
 );
 

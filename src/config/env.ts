@@ -63,6 +63,10 @@ const EnvSchema = z.object({
   LATENCY_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
   LATENCY_BASELINE_DAYS: z.coerce.number().int().positive().default(7),
 
+  // Health score (Phase 17). Weights are "availability,latency,errorRate,dependency".
+  HEALTH_SCORE_WEIGHTS: z.string().default('40,25,20,15'),
+  HEALTH_SCORE_WINDOW_HOURS: z.coerce.number().int().positive().default(24),
+
   // Health Check Runs (Phase 13). Roll-up window + retention.
   HEALTH_CHECK_RUN_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
   HEALTH_CHECK_RUN_RETENTION_DAYS: z.coerce.number().int().positive().default(90),

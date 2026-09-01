@@ -140,6 +140,16 @@ export const useLatency = (apiId: string | null) =>
     enabled: apiId != null,
   });
 
+export const useHealthScores = () =>
+  useQuery({ queryKey: ['health-scores'], queryFn: api.healthScores, refetchInterval: LIVE });
+
+export const useHealthScore = (apiId: string | null) =>
+  useQuery({
+    queryKey: ['health-score', apiId],
+    queryFn: () => api.healthScore(apiId!),
+    enabled: apiId != null,
+  });
+
 export const useSlaSummary = () =>
   useQuery({ queryKey: ['sla-summary'], queryFn: api.slaSummary, refetchInterval: 30_000 });
 

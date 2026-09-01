@@ -268,6 +268,33 @@ export interface TraceRow {
 
 export type SystemHealthLevel = 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
 
+export type ScoreBand = 'HEALTHY' | 'DEGRADED' | 'CRITICAL' | 'NO_DATA';
+
+export interface HealthScore {
+  apiId: string;
+  targetName: string;
+  score: number | null;
+  band: ScoreBand;
+  window: { hours: number; samples: number };
+  subScores: {
+    availability: number | null;
+    latency: number | null;
+    errorRate: number | null;
+    dependencyHealth: number | null;
+  };
+  contributions: {
+    key: 'availability' | 'latency' | 'errorRate' | 'dependencyHealth';
+    sub: number | null;
+    weight: number;
+    points: number | null;
+  }[];
+  comparison: {
+    latency: { currentP95: number | null; yesterdayP95: number | null; deltaPercent: number | null };
+    errorRate: { recentPct: number | null; priorPct: number | null; note: string | null };
+    recurrence: { count24h: number; note: string | null };
+  };
+}
+
 export interface HealthCheckRun {
   id: string;
   hcId: string;

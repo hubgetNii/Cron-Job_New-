@@ -12,6 +12,7 @@ import type {
   PerfBucket,
   HealthCheckRun,
   HealthCheckRunDetail,
+  HealthScore,
   LatencyStats,
   PublicStatus,
   RawTrace,
@@ -198,6 +199,10 @@ export const api = {
     req<Wrapped<LatencyStats[]>>('/observability/latency').then((r) => r.data),
   latency: (apiId: string) =>
     req<Wrapped<LatencyStats>>(`/observability/latency/${apiId}`).then((r) => r.data),
+  healthScores: () =>
+    req<Wrapped<HealthScore[]>>('/observability/health-score').then((r) => r.data),
+  healthScore: (apiId: string) =>
+    req<Wrapped<HealthScore>>(`/observability/health-score/${apiId}`).then((r) => r.data),
   revealTrace: (checkId: string) =>
     req<Wrapped<RawTrace>>(`/observability/traces/${checkId}/raw`).then((r) => r.data),
 

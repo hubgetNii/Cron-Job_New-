@@ -4,6 +4,8 @@ import { Download, Eye, EyeOff, Search } from 'lucide-react';
 import {
   useHealthCheckRun,
   useHealthCheckRuns,
+  useHealthScore,
+  useHealthScores,
   useLatency,
   useLatencyAll,
   useTrace,
@@ -20,10 +22,117 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type {
   LatencyAssessment,
   RawTrace,
+  ScoreBand,
   SystemHealthLevel,
   TraceRow,
   TraceSearchParams,
 } from '@/lib/types';
+
+const BAND_COLOR: Record<ScoreBand, string> = {
+  HEALTHY: 'var(--color-up)',
+  DEGRADED: 'var(--color-degraded)',
+  CRITICAL: 'var(--color-down)',
+  NO_DATA: 'var(--color-unknown)',
+};
+
+const SUB_LABEL: Record<string, string> = {
+  availability: 'Availability',
+  latency: 'Latency',
+  errorRate: 'Error rate',
+  dependencyHealth: 'Dependency health',
+};
+
+function ScoreBadge({ score, band }: { score: number | null; band: ScoreBand }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums"
+      style={{ color: BAND_COLOR[band], borderColor: 'var(--color-border)' }}
+    >
+      {score == null ? '—' : `${score}/100`}
+      <span className="font-normal opacity-70">{band === 'NO_DATA' ? 'no data' : band}</span>
+    </span>
+  );
+}
+
+function Bar({ value, color }: { value: number | null; color: string }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+      <div
+        className="h-full rounded-full"
+        style={{ width: `${value ?? 0}%`, background: color }}
+      />
+    </div>
+  );
+}
+
+function ScoreDetail({ apiId }: { apiId: string }) {
+  const { data: s, isLoading } = useHealthScore(apiId);
+  if (isLoading || !s) return <Skeleton className="h-80 w-full" />;
+  const c = s.comparison;
+  return (
+    <div className="space-y-4 overflow-y-auto">
+      <div>
+        <SheetTitle className="flex items-center gap-2">
+          {s.targetName}
+          <ScoreBadge score={s.score} band={s.band} />
+        </SheetTitle>
+        <SheetDescription>
+          last {s.window.hours}h · {s.window.samples} checks
+        </SheetDescription>
+      </div>
+
+      <div className="space-y-2">
+        {s.contributions.map((con) => (
+          <div key={con.key}>
+            <div className="flex items-baseline justify-between text-xs">
+              <span>{SUB_LABEL[con.key]}</span>
+              <span className="tabular-nums text-[var(--color-text-faint)]">
+                {con.sub == null ? 'no data' : `${con.sub}/100`} · weight {con.weight}
+                {con.points != null && ` · +${con.points}`}
+              </span>
+            </div>
+            <Bar
+              value={con.sub}
+              color={
+                con.sub == null
+                  ? 'var(--color-unknown)'
+                  : con.sub >= 85
+                    ? 'var(--color-up)'
+                    : con.sub >= 60
+                      ? 'var(--color-degraded)'
+                      : 'var(--color-down)'
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm">
+        <p className="text-xs uppercase tracking-wide text-[var(--color-text-faint)]">
+          Historical comparison
+        </p>
+        {c.latency.deltaPercent != null && (
+          <p>
+            Latency P95 {c.latency.yesterdayP95} ms → {c.latency.currentP95} ms —{' '}
+            <span
+              style={{
+                color: c.latency.deltaPercent > 0 ? 'var(--color-down)' : 'var(--color-up)',
+              }}
+            >
+              {c.latency.deltaPercent > 0 ? '+' : ''}
+              {c.latency.deltaPercent}% vs same window yesterday
+            </span>
+          </p>
+        )}
+        {c.errorRate.note && <p>{c.errorRate.note}</p>}
+        {c.recurrence.note && <p>{c.recurrence.note}</p>}
+        {!c.latency.deltaPercent && !c.errorRate.note && !c.recurrence.note && (
+          <p className="text-[var(--color-text-faint)]">Nothing notable vs recent history.</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const ASSESS_COLOR: Record<LatencyAssessment, string> = {
   NORMAL: 'var(--color-up)',
@@ -381,8 +490,10 @@ export function ObservabilityPage() {
   const openCheckId = params.get('check');
   const openHcId = params.get('hc');
   const openLatId = params.get('lat');
+  const openScoreId = params.get('score');
   const runs = useHealthCheckRuns(20);
   const latency = useLatencyAll();
+  const scores = useHealthScores();
   const [q, setQ] = useState(params.get('q') ?? '');
   const [statusClass, setStatusClass] = useState(params.get('statusClass') ?? '');
   const [health, setHealth] = useState(params.get('healthStatus') ?? '');
@@ -426,6 +537,13 @@ export function ObservabilityPage() {
     const next = new URLSearchParams(params);
     if (apiId) next.set('lat', apiId);
     else next.delete('lat');
+    setParams(next);
+  };
+
+  const setOpenScore = (apiId: string | null): void => {
+    const next = new URLSearchParams(params);
+    if (apiId) next.set('score', apiId);
+    else next.delete('score');
     setParams(next);
   };
 
@@ -496,6 +614,57 @@ export function ObservabilityPage() {
               <TR>
                 <TD colSpan={9} className="py-8 text-center text-[var(--color-text-faint)]">
                   No runs yet — the roll-up job records one every few minutes once checks are flowing.
+                </TD>
+              </TR>
+            )}
+          </TBody>
+        </Table>
+      </Card>
+
+      <Card>
+        <div className="border-b border-[var(--color-border)] px-4 py-2.5 text-sm font-medium">
+          Service health scores
+          <span className="ml-2 text-xs font-normal text-[var(--color-text-faint)]">
+            availability 40 · latency 25 · error rate 20 · dependency 15
+          </span>
+        </div>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Service</TH>
+              <TH>Score</TH>
+              <TH className="text-right">Availability</TH>
+              <TH className="text-right">Latency</TH>
+              <TH className="text-right">Error rate</TH>
+              <TH className="text-right">Dependency</TH>
+              <TH>Note</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {(scores.data ?? []).map((s) => (
+              <TR key={s.apiId} className="cursor-pointer" onClick={() => setOpenScore(s.apiId)}>
+                <TD className="font-medium">{s.targetName}</TD>
+                <TD>
+                  <ScoreBadge score={s.score} band={s.band} />
+                </TD>
+                {(['availability', 'latency', 'errorRate', 'dependencyHealth'] as const).map((k) => (
+                  <TD key={k} className="text-right tabular-nums text-[var(--color-text-faint)]">
+                    {s.subScores[k] == null ? '—' : Math.round(s.subScores[k]!)}
+                  </TD>
+                ))}
+                <TD className="max-w-[220px] truncate text-xs text-[var(--color-text-muted)]">
+                  {s.comparison.recurrence.note ??
+                    s.comparison.errorRate.note ??
+                    (s.comparison.latency.deltaPercent != null && s.comparison.latency.deltaPercent > 20
+                      ? `Latency +${s.comparison.latency.deltaPercent}% vs yesterday`
+                      : '')}
+                </TD>
+              </TR>
+            ))}
+            {!scores.isLoading && (scores.data ?? []).length === 0 && (
+              <TR>
+                <TD colSpan={7} className="py-8 text-center text-[var(--color-text-faint)]">
+                  No active targets.
                 </TD>
               </TR>
             )}
@@ -726,6 +895,10 @@ export function ObservabilityPage() {
 
       <Sheet open={openLatId != null} onOpenChange={(o) => !o && setOpenLat(null)}>
         <SheetContent>{openLatId && <LatencyDetail apiId={openLatId} />}</SheetContent>
+      </Sheet>
+
+      <Sheet open={openScoreId != null} onOpenChange={(o) => !o && setOpenScore(null)}>
+        <SheetContent>{openScoreId && <ScoreDetail apiId={openScoreId} />}</SheetContent>
       </Sheet>
     </div>
   );
