@@ -29,7 +29,8 @@ start() {   # start <name> <match-pattern> <command...>
 echo "[$(date '+%F %T')] local-up"
 
 # 1. datastores
-if ! docker compose ps --status running 2>/dev/null | grep -q postgres; then
+pg_state="$(docker compose ps postgres --format '{{.State}}' 2>/dev/null || true)"
+if [ "$pg_state" != "running" ]; then
   echo "  ▶ docker compose up -d (postgres + redis)"
   docker compose up -d >/dev/null
 else

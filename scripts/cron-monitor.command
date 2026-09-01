@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
-# Double-clickable launcher. Add it as a Login Item
-#   (System Settings → General → Login Items → "+"), and it starts the monitor
-#   on every login — Login Items run in your GUI session, so folder-access
-#   (Desktop/Documents) works, unlike a raw LaunchAgent.
+# Double-clickable launcher / Login Item.
 #
-# It also keeps the Mac awake while the monitor runs (caffeinate).
-cd "$(dirname "$0")/.."
-exec caffeinate -s bash -c '
-  ./scripts/local-up.sh
-  # keep this window/agent alive so caffeinate stays in effect and we can
-  # re-check every 5 min (idempotent — only restarts what died)
-  while true; do sleep 300; ./scripts/local-up.sh >/dev/null 2>&1; done
-'
+#   Add via: System Settings → General → Login Items →
+#            "Open at Login" section → "+" → pick this file.
+#   First run: right-click in Finder → Open (clears the Gatekeeper prompt).
+#
+# It starts the monitor + a detached supervisor (keeps the Mac awake, restarts a
+# crashed process every 5 min), then closes — no Terminal window left hanging.
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR/.."
+
+if pgrep -f "$DIR/local-supervisor.sh" >/dev/null 2>&1 \
+   || pgrep -f 'caffeinate -s bash -c' >/dev/null 2>&1; then
+  echo "cron-monitor supervisor already running."
+else
+  nohup "$DIR/local-supervisor.sh" >/dev/null 2>&1 &
+  disown
+  echo "started cron-monitor supervisor (pid $!)"
+fi
+
+"$DIR/local-up.sh"          # bring everything up now too
+
+echo
+echo "Done — you can close this window."
+sleep 3

@@ -89,12 +89,23 @@ Logs land in `.run/*.log`. `.run/` is gitignored.
 **If the repo is on your Desktop** (or Documents / Downloads), macOS TCC blocks a
 LaunchAgent from reaching it. Use the Login Item instead:
 
-1. **System Settings → General → Login Items → "+"**
-2. Add **`scripts/cron-monitor.command`**
+1. **System Settings → General → Login Items**
+2. In the **"Open at Login"** section (not "Allow in the Background"), click **"+"**
+3. Navigate to `fintech-cron-monitor/scripts/` and pick **`cron-monitor.command`**
+   (⌘⇧G in the file dialog and paste the path if it's hard to find)
 
-It starts everything on login, keeps the Mac awake (`caffeinate`), and re-runs the
-idempotent `local-up.sh` every 5 minutes so a crashed process recovers.
-(First run: right-click the `.command` → Open, to clear the Gatekeeper prompt.)
+First time, run it once by hand to clear Gatekeeper: **right-click it in Finder →
+Open → Open**.
+
+On login it starts a detached supervisor (`caffeinate` keeps the Mac awake +
+re-runs the idempotent `local-up.sh` every 5 min so a crashed process recovers),
+then closes its window. Verify it registered:
+
+```bash
+osascript -e 'tell application "System Events" to get the name of every login item'
+# → the list should include "cron-monitor"
+pgrep -fl 'caffeinate -s bash'    # the supervisor, once it's running
+```
 
 **If the repo is *not* under a protected folder**, the LaunchAgent is cleaner:
 
