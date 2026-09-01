@@ -2,7 +2,13 @@
 <!--
   macOS LaunchAgent — keeps the local monitor running.
 
-  Install (edit the two paths first if your checkout is elsewhere):
+  ⚠️ This ONLY works if the checkout is NOT under ~/Desktop, ~/Documents or
+     ~/Downloads. macOS TCC blocks launchd from those folders ("Operation not
+     permitted"). If your repo is on the Desktop, use scripts/cron-monitor.command
+     as a Login Item instead (Login Items run in your GUI session and can reach
+     protected folders).
+
+  Install (edit the absolute paths below to match your checkout):
     cp scripts/com.ismartghana.cron-monitor.plist ~/Library/LaunchAgents/
     launchctl load  ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
 

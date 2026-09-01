@@ -86,22 +86,25 @@ Logs land in `.run/*.log`. `.run/` is gitignored.
 
 ### Auto-start on login + auto-restart (macOS)
 
+**If the repo is on your Desktop** (or Documents / Downloads), macOS TCC blocks a
+LaunchAgent from reaching it. Use the Login Item instead:
+
+1. **System Settings → General → Login Items → "+"**
+2. Add **`scripts/cron-monitor.command`**
+
+It starts everything on login, keeps the Mac awake (`caffeinate`), and re-runs the
+idempotent `local-up.sh` every 5 minutes so a crashed process recovers.
+(First run: right-click the `.command` → Open, to clear the Gatekeeper prompt.)
+
+**If the repo is *not* under a protected folder**, the LaunchAgent is cleaner:
+
 ```bash
-# edit the two absolute paths in the plist if your checkout isn't at
-#   ~/Desktop/M-Cron Job /fintech-cron-monitor
+# edit the absolute paths in the plist to match your checkout first
 cp scripts/com.ismartghana.cron-monitor.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
-```
-
-`RunAtLoad` brings it up on login; a 5-minute `StartInterval` re-runs the
-idempotent `local-up.sh`, so a crashed process is back within minutes and a
-reboot restores everything.
-
-To remove:
-
-```bash
-launchctl unload ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
-rm ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+# remove:
+launchctl unload ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist && \
+  rm ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
 ```
 
 ### Don't let the Mac sleep
