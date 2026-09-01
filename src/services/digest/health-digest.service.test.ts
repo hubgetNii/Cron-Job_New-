@@ -3,9 +3,11 @@ import { checkDbHealth, closePool, query } from '../../lib/db.js';
 import { resetEnvCache } from '../../config/index.js';
 import type { AffectedService } from '../../repositories/health-digests.repo.js';
 import {
+  broadcastStatusSms,
   buildDigest,
   composeEmail,
   composeMessage,
+  composeStatusSms,
   evaluateDigest,
   rollUp,
   type ServiceStatus,
@@ -87,6 +89,63 @@ describe('composeMessage', () => {
     expect(msg).toContain('Status: ✅ HEALTHY');
     expect(msg).toContain('All 20 services healthy.');
     expect(msg).toContain('Recovered from CRITICAL.');
+  });
+});
+
+describe('composeStatusSms (routine platform status)', () => {
+  const svc = (over: Partial<ServiceStatus>): ServiceStatus => ({
+    name: 'Svc',
+    status: 'UP',
+    endpointClass: 'internal',
+    environment: 'production',
+    isMoneyMoving: false,
+    uptime24h: 99,
+    lastResponseMs: 100,
+    lastRunAt: new Date(),
+    openIncident: false,
+    ...over,
+  });
+  const base = {
+    now: new Date('2026-08-31T14:00:00Z'),
+    nextBroadcastAt: new Date('2026-08-31T15:00:00Z'),
+  };
+
+  it('summarises a healthy platform with counts + avg uptime', () => {
+    const msg = composeStatusSms({
+      ...base,
+      overallLevel: 'HEALTHY',
+      services: [svc({ uptime24h: 99 }), svc({ uptime24h: 97 })],
+      healthyServices: 2,
+      downServices: 0,
+      degradedServices: 0,
+      openIncidents: 0,
+    });
+    expect(msg).toContain('Status: ✅ HEALTHY');
+    expect(msg).toContain('Systems: 2 total · 2 up · 0 down');
+    expect(msg).toContain('Uptime 24h (avg): 98.00%');
+    expect(msg).toContain('Next SMS:');
+    expect(msg).not.toContain('Needs attention');
+  });
+
+  it('lists the systems needing attention, money-moving first', () => {
+    const msg = composeStatusSms({
+      ...base,
+      overallLevel: 'CRITICAL',
+      services: [
+        svc({ name: 'Payment API', status: 'DOWN', isMoneyMoving: true }),
+        svc({ name: 'SMS API', status: 'DEGRADED' }),
+        svc({ name: 'Ledger', status: 'UP' }),
+      ],
+      healthyServices: 1,
+      downServices: 1,
+      degradedServices: 1,
+      openIncidents: 2,
+    });
+    expect(msg).toContain('Open incidents: 2');
+    expect(msg).toContain('Needs attention:');
+    expect(msg).toContain('- Payment API: DOWN (money-moving)');
+    expect(msg).toContain('- SMS API: DEGRADED');
+    expect(msg.indexOf('Payment API')).toBeLessThan(msg.indexOf('SMS API'));
   });
 });
 
@@ -199,10 +258,12 @@ describe.skipIf(!dbUp)('evaluateDigest — Rule A (overall state change)', () =>
   beforeAll(() => {
     process.env['SMS_DIGEST_ENABLED'] = 'true';
     process.env['SMS_DIGEST_RECIPIENTS'] = '+233200000000';
+    process.env['SMS_STATUS_BROADCAST_ENABLED'] = 'true';
     resetEnvCache();
   });
   afterAll(async () => {
     delete process.env['SMS_DIGEST_RECIPIENTS'];
+    process.env['SMS_STATUS_BROADCAST_ENABLED'] = 'false';
     resetEnvCache();
     await query(`DELETE FROM monitored_apis`);
     await query(`DELETE FROM health_digests`);
@@ -290,6 +351,30 @@ describe.skipIf(!dbUp)('evaluateDigest — Rule A (overall state change)', () =>
     expect(second.emailSent).toBe(true); // logged-fallback counts as ok
     expect(second.emailRecipients).toBe(1);
     expect(second.reason).toMatch(/Email → 1\/1/);
+  });
+
+  it('broadcastStatusSms sends the full status to every SMS contact, even when nothing changed', async () => {
+    await query(
+      `INSERT INTO notification_contacts (name, channel, address, digest, digest_every_run)
+       VALUES ('Ops phone', 'SMS', '233553476530', true, false)`,
+    );
+    await evaluateDigest(); // baseline HEALTHY
+
+    const first = await broadcastStatusSms();
+    expect(first.reason).toMatch(/routine SMS status broadcast/);
+    expect(first.overallLevel).toBe('HEALTHY');
+    expect(first.smsRecipients).toBeGreaterThanOrEqual(2); // contact + env recipient
+
+    // second broadcast, still HEALTHY → still sends (not gated on change)
+    const second = await broadcastStatusSms();
+    expect(second.smsRecipients).toBeGreaterThanOrEqual(2);
+    expect(second.previousLevel).toBe('HEALTHY');
+
+    // a state-change SMS after two broadcasts still fires correctly
+    await setStatus(ids.b!, 'DOWN');
+    const changed = await evaluateDigest();
+    expect(changed.overallLevel).toBe('DEGRADED');
+    expect(changed.smsSent).toBe(true);
   });
 
   it('a state-change-only EMAIL contact only gets email on a transition', async () => {

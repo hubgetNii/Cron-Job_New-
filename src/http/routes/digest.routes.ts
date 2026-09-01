@@ -4,7 +4,12 @@ import { requireRole } from '../middleware/auth.js';
 import { actorFromRequest } from '../actor.js';
 import { recordAudit } from '../../services/audit/audit.service.js';
 import { listDigests, latestDigest } from '../../repositories/health-digests.repo.js';
-import { buildDigest, evaluateDigest } from '../../services/digest/health-digest.service.js';
+import {
+  broadcastStatusSms,
+  buildDigest,
+  evaluateDigest,
+  previewStatusSms,
+} from '../../services/digest/health-digest.service.js';
 
 /**
  * SMS health-digest endpoints. The digest is a periodic *summary* of overall
@@ -27,6 +32,28 @@ digestRouter.get('/health-digests/latest', async (_req: Request, res: Response) 
 digestRouter.get('/health-digests/preview', async (_req: Request, res: Response) => {
   res.json({ data: await buildDigest() });
 });
+
+// Preview the routine status SMS text + who it would go to — no send.
+digestRouter.get('/health-digests/sms-preview', async (_req: Request, res: Response) => {
+  res.json({ data: await previewStatusSms() });
+});
+
+// Send the routine platform-status SMS now, to every SMS contact.
+digestRouter.post(
+  '/health-digests/broadcast-sms',
+  requireRole('ADMIN', 'OPERATOR'),
+  async (req: Request, res: Response) => {
+    const digest = await broadcastStatusSms();
+    await recordAudit({
+      actor: actorFromRequest(req),
+      action: 'health_digest.sms_broadcast',
+      entityType: 'health_digest',
+      entityId: digest.id,
+      summary: `Manual SMS status broadcast — ${digest.overallLevel} → ${digest.smsRecipients} recipient(s)`,
+    });
+    res.json({ data: digest });
+  },
+);
 
 // Force an evaluation now (persists; sends an SMS only if the level changed).
 digestRouter.post(

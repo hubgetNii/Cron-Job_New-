@@ -131,6 +131,54 @@ The label (`iSmart Health`) is `SMS_DIGEST_LABEL`; times use `SMS_DIGEST_TIMEZON
 | Minor / transient failure → suppress | a blip that retries clean before the next digest never shows a non-UP `last_status`; the incident engine already absorbs transient failures |
 | No change from previous check → suppress | `previous === current` → suppressed |
 
+## Routine SMS status broadcast (hourly)
+
+On top of Rule A, a second job sends the **full platform status** to *every* SMS
+contact on a fixed cadence — hourly by default — **regardless of whether anything
+changed**. This is the SMS counterpart of the every-run email: a recurring
+heartbeat so the on-call always knows the platform is being watched.
+
+Example message:
+
+```
+iSmart Health – 2:00 PM
+Status: ✅ HEALTHY
+Systems: 6 total · 6 up · 0 down
+Open incidents: 0
+Uptime 24h (avg): 98.94%
+Next SMS: 3:00 PM.
+```
+
+When something needs attention it also lists the affected systems (money-moving
+first, up to 6, then `…+N more`):
+
+```
+iSmart Health – 2:00 PM
+Status: 🔴 CRITICAL
+Systems: 6 total · 4 up · 2 down
+Open incidents: 2
+Uptime 24h (avg): 91.20%
+Needs attention:
+- Payment API: DOWN (money-moving)
+- SMS API: DEGRADED
+Next SMS: 3:00 PM.
+```
+
+- Recipients: **all** active SMS `notification_contacts` + `SMS_DIGEST_RECIPIENTS`
+  — the `digest_every_run` flag does not apply, the broadcast always goes to
+  everyone.
+- Runs in the scheduler process. First send is one interval after start (no
+  immediate fire on restart).
+- Every broadcast is recorded in `health_digests` with `reason` starting
+  `routine SMS status broadcast`.
+
+Endpoints:
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET`  | `/api/v1/health-digests/sms-preview` | the text + recipient list, no send |
+| `POST` | `/api/v1/health-digests/broadcast-sms` | send now to every SMS contact (ADMIN/OPERATOR) |
+
 ## Configuration
 
 ```dotenv
@@ -138,6 +186,8 @@ SMS_DIGEST_ENABLED=true
 SMS_DIGEST_INTERVAL_MINUTES=30          # 5–10 for near-immediate critical alerts
 SMS_DIGEST_RECIPIENTS=+233200000000,+233240000000
 SMS_DIGEST_TIMEZONE=Africa/Accra
+SMS_STATUS_BROADCAST_ENABLED=true       # the hourly full-status SMS
+SMS_STATUS_INTERVAL_MINUTES=60
 SMS_DIGEST_LABEL=iSmart Health
 
 # transport — the iSmartGhana bulk-SMS gateway (shared with per-event SMS)

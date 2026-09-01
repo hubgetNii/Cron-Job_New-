@@ -118,6 +118,12 @@ const EnvSchema = z.object({
   // Unset → the server's local timezone.
   SMS_DIGEST_TIMEZONE: z.string().optional(),
   SMS_DIGEST_LABEL: z.string().default('iSmart Health'),
+
+  // Routine SMS status broadcast. On top of Rule A (state-change SMS), send the
+  // full platform status to every SMS digest contact on a fixed cadence,
+  // regardless of whether anything changed. Mirrors the every-run email.
+  SMS_STATUS_BROADCAST_ENABLED: BoolFromString.default('true'),
+  SMS_STATUS_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(60),
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   ALERT_SLACK_WEBHOOK_URL: z.string().url().optional(),
   WEBHOOK_SIGNING_SECRET: z.string().optional(),

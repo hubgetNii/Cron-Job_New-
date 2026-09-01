@@ -262,6 +262,54 @@ export function composeEmail(s: EmailReportInput): {
   return { subject, body, html };
 }
 
+export interface StatusSmsInput {
+  now: Date;
+  nextBroadcastAt: Date;
+  overallLevel: SystemHealthLevel;
+  services: ServiceStatus[];
+  healthyServices: number;
+  downServices: number;
+  degradedServices: number;
+  openIncidents: number;
+}
+
+/**
+ * The routine status SMS — the whole platform's health in a few lines, sent on a
+ * fixed cadence (hourly by default) regardless of whether anything changed. This
+ * is the SMS counterpart of the every-run email, condensed for a text message.
+ */
+export function composeStatusSms(s: StatusSmsInput): string {
+  const label = env().SMS_DIGEST_LABEL;
+  const meta = LEVEL_META[s.overallLevel];
+  const total = s.services.length;
+  const upnums = s.services.map((x) => x.uptime24h).filter((v): v is number => v != null);
+  const avgUptime =
+    upnums.length > 0 ? upnums.reduce((a, b) => a + b, 0) / upnums.length : null;
+
+  const lines = [
+    `${label} – ${formatTime(s.now)}`,
+    `Status: ${meta.icon} ${meta.word}`,
+    `Systems: ${total} total · ${s.healthyServices} up · ${s.downServices} down` +
+      (s.degradedServices > 0 ? ` · ${s.degradedServices} degraded` : ''),
+    `Open incidents: ${s.openIncidents}`,
+  ];
+  if (avgUptime != null) lines.push(`Uptime 24h (avg): ${avgUptime.toFixed(2)}%`);
+
+  const attention = sortServices(s.services.filter((x) => !isHealthy(x.status)));
+  if (attention.length > 0) {
+    lines.push('Needs attention:');
+    const shown = attention.slice(0, 6);
+    for (const x of shown) {
+      lines.push(
+        `- ${x.name}: ${x.status ?? 'UNKNOWN'}${x.isMoneyMoving ? ' (money-moving)' : ''}`,
+      );
+    }
+    if (attention.length > shown.length) lines.push(`…+${attention.length - shown.length} more`);
+  }
+  lines.push(`Next SMS: ${formatTime(s.nextBroadcastAt)}.`);
+  return lines.join('\n');
+}
+
 /**
  * Rule A — send an SMS only when the *overall* level changes. A same-level run
  * (still DEGRADED, still CRITICAL, …) is suppressed — "service remains down"
@@ -472,5 +520,99 @@ export async function evaluateDigest(now: Date = new Date()): Promise<HealthDige
     emailRecipients: emailSent,
     reason,
     nextCheckAt: snap.nextCheckAt,
+  });
+}
+
+/** Builds the routine status SMS text without sending — for previews/tests. */
+export async function previewStatusSms(now: Date = new Date()): Promise<{
+  message: string;
+  recipients: string[];
+  overallLevel: SystemHealthLevel;
+}> {
+  const snap = await buildDigest(now);
+  const list = await smsRecipientList();
+  const message = composeStatusSms({
+    now,
+    nextBroadcastAt: new Date(now.getTime() + env().SMS_STATUS_INTERVAL_MINUTES * 60_000),
+    overallLevel: snap.overallLevel,
+    services: snap.services,
+    healthyServices: snap.healthyServices,
+    downServices: snap.downServices,
+    degradedServices: snap.degradedServices,
+    openIncidents: snap.services.filter((x) => x.openIncident).length,
+  });
+  return { message, recipients: list.map((r) => r.address), overallLevel: snap.overallLevel };
+}
+
+/**
+ * Routine SMS status broadcast (hourly by default). Sends the full platform
+ * status to EVERY SMS digest contact + `SMS_DIGEST_RECIPIENTS`, unconditionally
+ * — this is the SMS counterpart of the every-run email, and is independent of
+ * Rule A's state-change SMS. The snapshot is recorded in `health_digests` with a
+ * `routine SMS status broadcast` marker so it shows in history.
+ */
+export async function broadcastStatusSms(now: Date = new Date()): Promise<HealthDigest> {
+  const snap = await buildDigest(now);
+  const nextBroadcastAt = new Date(now.getTime() + env().SMS_STATUS_INTERVAL_MINUTES * 60_000);
+  const parts: string[] = ['routine SMS status broadcast'];
+  let smsSent = 0;
+
+  if (env().SMS_STATUS_BROADCAST_ENABLED && env().SMS_DIGEST_ENABLED) {
+    const recipients = await smsRecipientList();
+    if (recipients.length === 0) {
+      parts.push('no SMS recipients');
+    } else {
+      const message = composeStatusSms({
+        now,
+        nextBroadcastAt,
+        overallLevel: snap.overallLevel,
+        services: snap.services,
+        healthyServices: snap.healthyServices,
+        downServices: snap.downServices,
+        degradedServices: snap.degradedServices,
+        openIncidents: snap.services.filter((x) => x.openIncident).length,
+      });
+      const sms = channelFor('SMS');
+      const outcomes = await Promise.all(
+        recipients.map((r) =>
+          sms.send({
+            alertType: 'HEALTH_DIGEST',
+            severity: snap.overallLevel,
+            subject: `${env().SMS_DIGEST_LABEL} status: ${snap.overallLevel}`,
+            body: message,
+            recipient: r.address,
+            incidentNumber: null,
+            targetName: null,
+            payload: { digest: true, routine: true, level: snap.overallLevel },
+          }),
+        ),
+      );
+      smsSent = outcomes.filter((o) => o.ok).length;
+      parts.push(`SMS → ${smsSent}/${recipients.length}: ${outcomes.map((o) => o.detail).join('; ')}`);
+    }
+  } else {
+    parts.push('broadcast disabled');
+  }
+
+  log.info(
+    { level: snap.overallLevel, smsSent, recipients: parts.length },
+    'routine SMS status broadcast',
+  );
+
+  return saveDigest({
+    overallLevel: snap.overallLevel,
+    // Keep the level chain honest — a broadcast is not a transition.
+    previousLevel: snap.overallLevel,
+    totalServices: snap.totalServices,
+    healthyServices: snap.healthyServices,
+    degradedServices: snap.degradedServices,
+    downServices: snap.downServices,
+    affected: snap.affected,
+    smsSent: smsSent > 0,
+    smsRecipients: smsSent,
+    emailSent: false,
+    emailRecipients: 0,
+    reason: parts.join(' | '),
+    nextCheckAt: nextBroadcastAt,
   });
 }

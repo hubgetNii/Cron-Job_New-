@@ -21,6 +21,7 @@ process.env['FCM_SERVICE_ACCOUNT_FILE'] = '';
 process.env['FCM_DEFAULT_TOPIC'] = '';
 process.env['SMS_DIGEST_RECIPIENTS'] = '';
 process.env['SMS_DIGEST_TIMEZONE'] = 'UTC';
+process.env['SMS_STATUS_BROADCAST_ENABLED'] = 'false';
 process.env['SMS_GATEWAY_URL'] = '';
 process.env['SMS_API_ID'] = '';
 process.env['SMS_API_PASSWORD'] = '';
