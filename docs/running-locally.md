@@ -74,30 +74,52 @@ curl -s localhost:3000/health/scheduler | jq        # "ok" once the scheduler ha
 open http://localhost:5173                          # dashboard — log in with the bootstrap admin
 ```
 
-### Run detached (survives closing the terminal)
+### Keep it running (detached, self-healing)
 
 ```bash
-mkdir -p .run
-nohup npm run dev              > .run/api.log       2>&1 &
-nohup npm run dev:scheduler    > .run/scheduler.log 2>&1 &
-nohup npm run dev:watchdog     > .run/watchdog.log  2>&1 &
-nohup sh -c 'cd web && npm run dev' > .run/web.log  2>&1 &
-jobs -l                        # note the PIDs
-
-# stop them all
-pkill -f 'tsx watch src/'
-pkill -f 'web/node_modules/.bin/vite'
+scripts/local-up.sh      # starts docker + the 4 processes; idempotent, safe to repeat
+scripts/local-up.sh --status
+scripts/local-down.sh    # stop the node processes (add --all to stop postgres/redis too)
 ```
 
-(`.run/` is gitignored via `*.log`.)
+Logs land in `.run/*.log`. `.run/` is gitignored.
 
-### One-liner helper
+### Auto-start on login + auto-restart (macOS)
 
 ```bash
-# start
-docker compose up -d && \
-  (npm run dev & npm run dev:scheduler & npm run dev:watchdog & (cd web && npm run dev) &)
+# edit the two absolute paths in the plist if your checkout isn't at
+#   ~/Desktop/M-Cron Job /fintech-cron-monitor
+cp scripts/com.ismartghana.cron-monitor.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
 ```
+
+`RunAtLoad` brings it up on login; a 5-minute `StartInterval` re-runs the
+idempotent `local-up.sh`, so a crashed process is back within minutes and a
+reboot restores everything.
+
+To remove:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+rm ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+```
+
+### Don't let the Mac sleep
+
+launchd can't run a frozen process. If the lid closes / the machine sleeps, the
+scheduler stops ticking and `missedRunTotal` climbs until it wakes.
+
+```bash
+caffeinate -s   # keep awake while on power — run in its own terminal, or:
+caffeinate -s -w $(pgrep -f 'tsx watch src/scheduler')   # tie it to the scheduler
+```
+
+Or **System Settings → Battery → Options → "Prevent automatic sleeping on power
+adapter when the display is off"**, and **Lock Screen → turn display off after: Never**
+while plugged in.
+
+> This is the real limit of "run it on my laptop." For true always-on, deploy to
+> a small server — see [`deployment.md`](./deployment.md).
 
 ---
 

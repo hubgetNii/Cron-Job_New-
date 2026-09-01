@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS LaunchAgent — keeps the local monitor running.
+
+  Install (edit the two paths first if your checkout is elsewhere):
+    cp scripts/com.ismartghana.cron-monitor.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+    rm ~/Library/LaunchAgents/com.ismartghana.cron-monitor.plist
+
+  RunAtLoad starts it on login; StartInterval re-runs the idempotent script
+  every 5 min so a crashed process is back within minutes. It does NOT keep the
+  Mac awake — pair with `caffeinate -s` or Energy Saver "prevent sleep".
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ismartghana.cron-monitor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/ismarghana/Desktop/M-Cron Job /fintech-cron-monitor/scripts/local-up.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/ismarghana/Desktop/M-Cron Job /fintech-cron-monitor</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ismarghana/Desktop/M-Cron Job /fintech-cron-monitor/.run/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/ismarghana/Desktop/M-Cron Job /fintech-cron-monitor/.run/launchd.log</string>
+</dict>
+</plist>
