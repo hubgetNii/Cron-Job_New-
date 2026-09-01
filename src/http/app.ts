@@ -19,6 +19,7 @@ import { dashboardRouter } from './routes/dashboard.routes.js';
 import { configRequestRouter } from './routes/config-request.routes.js';
 import { statusRouter } from './routes/status.routes.js';
 import { aiRouter } from './routes/ai.routes.js';
+import { intelligenceRouter } from './routes/intelligence.routes.js';
 import { slaRouter } from './routes/sla.routes.js';
 import { digestRouter } from './routes/digest.routes.js';
 import { notificationContactsRouter } from './routes/notification-contacts.routes.js';
@@ -86,6 +87,7 @@ export function createApp(): Express {
   api.use(alertRouter);
   api.use(dashboardRouter);
   api.use(aiRouter);
+  api.use(intelligenceRouter);
   api.use(slaRouter);
   api.use(digestRouter);
   api.use(notificationContactsRouter);

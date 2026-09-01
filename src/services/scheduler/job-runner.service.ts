@@ -6,6 +6,7 @@ import type { HealthCheckOutcome } from '../../domain/health-check.js';
 import { executeCheck, type ExecuteOptions } from '../health-check/executor.service.js';
 import { acquireLock, releaseLock } from './lock.service.js';
 import { processCheckOutcome } from '../incident/state-machine.service.js';
+import { buildRootCauseAnalysis } from '../intelligence/rca.service.js';
 import {
   claimJobRun,
   completeJobRun,
@@ -17,6 +18,28 @@ import {
 } from '../../repositories/scheduler.repo.js';
 
 const log = componentLogger('job-runner');
+
+/**
+ * Recomputes the deterministic RCA after the check + incident transition have
+ * committed (spec §8). Best-effort and advisory — a failure here never affects
+ * the check result or the incident.
+ */
+async function refreshRcaFor(
+  transition: Awaited<ReturnType<typeof processCheckOutcome>>,
+): Promise<void> {
+  if (
+    transition.kind !== 'opened' &&
+    transition.kind !== 'failure_recorded' &&
+    transition.kind !== 'flapping_detected'
+  ) {
+    return;
+  }
+  try {
+    await buildRootCauseAnalysis(transition.incident.id);
+  } catch (err) {
+    log.warn({ err, incidentId: transition.incident.id }, 'RCA refresh failed (advisory)');
+  }
+}
 
 /** Deterministic idempotency key for a (target, slot) pair. */
 export function jobRunId(targetId: string, slot: Date): string {
@@ -86,6 +109,7 @@ export async function runScheduledCheck(
 
     try {
       const outcome = await execute(target);
+      let transition: Awaited<ReturnType<typeof processCheckOutcome>> = { kind: 'noop' };
       await withTransaction(async (client) => {
         const checkId = await insertHealthCheckResult(
           { apiId: target.id, jobRunId: runId, outcome },
@@ -95,7 +119,7 @@ export async function runScheduledCheck(
           { targetId: target.id, scheduledSlot, status: outcome.status },
           client,
         );
-        await processCheckOutcome(
+        transition = await processCheckOutcome(
           {
             target,
             status: outcome.status,
@@ -107,6 +131,7 @@ export async function runScheduledCheck(
         );
         await completeJobRun(claimId, 'SUCCESS', client);
       });
+      await refreshRcaFor(transition);
       return { kind: 'executed', outcome };
     } catch (err) {
       // The check failed to run at all — the monitor is the incident here.
