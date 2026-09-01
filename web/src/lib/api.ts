@@ -21,6 +21,7 @@ import type {
   Target,
   TargetStatusRow,
   TestOutcome,
+  TimelineEntry,
   TraceRow,
   TraceSearchParams,
 } from './types';
@@ -178,6 +179,8 @@ export const api = {
     req<Wrapped<RootCauseAnalysis>>(`/incidents/${id}/rca/recompute`, { method: 'POST' }).then(
       (r) => r.data,
     ),
+  incidentTimeline: (id: string) =>
+    req<Wrapped<TimelineEntry[]>>(`/incidents/${id}/timeline`).then((r) => r.data),
 
   traces: (params: TraceSearchParams) =>
     req<Wrapped<TraceRow[]> & { total: number }>(

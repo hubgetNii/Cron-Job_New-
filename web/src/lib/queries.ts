@@ -85,6 +85,14 @@ export const useIncidentRca = (id: string | null) =>
     refetchInterval: LIVE,
   });
 
+export const useIncidentTimeline = (id: string | null) =>
+  useQuery({
+    queryKey: ['incident-timeline', id],
+    queryFn: () => api.incidentTimeline(id!),
+    enabled: id != null,
+    refetchInterval: LIVE,
+  });
+
 export function useRecomputeRca(id: string | null) {
   const qc = useQueryClient();
   return useMutation({

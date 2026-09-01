@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { IncidentStatusBadge, SeverityBadge } from '@/components/status-badge';
 import { IncidentAiPanel } from '@/components/incident-ai-panel';
 import { IncidentRcaPanel } from '@/components/incident-rca-panel';
+import { IncidentTimelinePanel } from '@/components/incident-timeline-panel';
 
 function fmtDuration(secs: number | null): string {
   if (secs == null) return '—';
@@ -148,6 +149,8 @@ export function IncidentsPage() {
                   </dd>
                 </div>
               </dl>
+
+              <IncidentTimelinePanel incidentId={detail.data.id} />
 
               <IncidentRcaPanel incidentId={detail.data.id} />
 

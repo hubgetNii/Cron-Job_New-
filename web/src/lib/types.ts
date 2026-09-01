@@ -352,6 +352,14 @@ export interface TraceSearchParams {
   offset?: number;
 }
 
+export interface TimelineEntry {
+  at: string;
+  kind: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  source: string;
+}
+
 export interface RcaRecommendation {
   finding: string;
   recommendation: string;

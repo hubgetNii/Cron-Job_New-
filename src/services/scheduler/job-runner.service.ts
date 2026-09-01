@@ -17,13 +17,18 @@ import {
   recordSkippedRun,
 } from '../../repositories/scheduler.repo.js';
 import { insertTrace, newRequestId } from '../../repositories/health-check-traces.repo.js';
+import {
+  incidentEventExists,
+  recordIncidentEvent,
+} from '../../repositories/incident-events.repo.js';
 
 const log = componentLogger('job-runner');
 
 /**
  * Recomputes the deterministic RCA after the check + incident transition have
- * committed (spec §8). Best-effort and advisory — a failure here never affects
- * the check result or the incident.
+ * committed (spec §8) and appends the derived timeline events (spec §12).
+ * Best-effort and advisory — a failure here never affects the check result or
+ * the incident.
  */
 async function refreshRcaFor(
   transition: Awaited<ReturnType<typeof processCheckOutcome>>,
@@ -35,10 +40,55 @@ async function refreshRcaFor(
   ) {
     return;
   }
+  const incidentId = transition.incident.id;
   try {
-    await buildRootCauseAnalysis(transition.incident.id);
+    const rca = await buildRootCauseAnalysis(incidentId);
+
+    if (!(await incidentEventExists(incidentId, 'rca_computed'))) {
+      await recordIncidentEvent({
+        incidentId,
+        kind: 'rca_computed',
+        summary: `RCA: ${rca.category} — ${rca.probableCause}`,
+        detail: { category: rca.category, confidence: rca.confidence },
+        source: 'rca',
+      });
+    }
+    if (rca.category === 'DATABASE' && !(await incidentEventExists(incidentId, 'database_error'))) {
+      await recordIncidentEvent({
+        incidentId,
+        kind: 'database_error',
+        summary: `Database dependency implicated — ${rca.subtype}`,
+        detail: { subtype: rca.subtype },
+        source: 'rca',
+      });
+    }
+    if (
+      rca.category === 'DEPENDENCY' &&
+      !(await incidentEventExists(incidentId, 'dependency_error'))
+    ) {
+      await recordIncidentEvent({
+        incidentId,
+        kind: 'dependency_error',
+        summary: `Downstream dependency implicated — ${rca.subtype}`,
+        detail: { subtype: rca.subtype },
+        source: 'rca',
+      });
+    }
+    if (
+      rca.latency &&
+      rca.latency.ratio >= 2 &&
+      !(await incidentEventExists(incidentId, 'latency_elevated'))
+    ) {
+      await recordIncidentEvent({
+        incidentId,
+        kind: 'latency_elevated',
+        summary: `Latency ${rca.latency.baselineMs}ms → ${rca.latency.recentMs}ms (${rca.latency.ratio}× baseline)`,
+        detail: rca.latency,
+        source: 'rca',
+      });
+    }
   } catch (err) {
-    log.warn({ err, incidentId: transition.incident.id }, 'RCA refresh failed (advisory)');
+    log.warn({ err, incidentId }, 'RCA / timeline refresh failed (advisory)');
   }
 }
 

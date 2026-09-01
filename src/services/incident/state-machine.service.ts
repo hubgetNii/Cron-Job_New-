@@ -15,6 +15,7 @@ import {
 } from '../../repositories/incidents.repo.js';
 import { recordAlert } from '../../repositories/scheduler.repo.js';
 import { incidentAlertContacts } from '../../repositories/notification-contacts.repo.js';
+import { recordIncidentEvent } from '../../repositories/incident-events.repo.js';
 import { queueRecoveryAlerts } from '../alert/recovery.js';
 
 const log = componentLogger('incident');
@@ -84,6 +85,16 @@ async function checkFlapping(
   if (transitions < env().FLAPPING_THRESHOLD) return null;
   if (active && active.incidentType !== 'FLAPPING') {
     await markIncidentFlapping(active.id, client);
+    await recordIncidentEvent(
+      {
+        incidentId: active.id,
+        kind: 'flapping_detected',
+        summary: `"${target.name}" changed state ${transitions}× in ${env().FLAPPING_WINDOW_MINUTES} min`,
+        detail: { transitions, windowMinutes: env().FLAPPING_WINDOW_MINUTES },
+        source: 'state_machine',
+      },
+      client,
+    );
     await recordDefaultAlerts(
       {
         alertType: 'FLAPPING_DETECTED',
@@ -183,6 +194,24 @@ export async function processCheckOutcome(
       : { kind: 'opened', incident };
   }
 
+  // Record a timeline entry when the failure signature changes (e.g.
+  // "first timeout", then "HTTP 503") — not on every repeat of the same one.
+  if (failureType != null && failureType !== active.failureType) {
+    await recordIncidentEvent(
+      {
+        incidentId: active.id,
+        kind: 'failure_changed',
+        summary:
+          active.failureType == null
+            ? `Failure classified as ${failureType}`
+            : `Failure changed: ${active.failureType} → ${failureType}`,
+        detail: { from: active.failureType, to: failureType, checkId: ctx.checkId },
+        source: 'state_machine',
+      },
+      client,
+    );
+  }
+
   await incrementFailureCount(active.id, failureType, client);
 
   // A DOWN check while a DEGRADATION incident is open promotes it to a full
@@ -192,6 +221,16 @@ export async function processCheckOutcome(
     await client.query(
       `UPDATE incidents SET incident_type = 'OUTAGE', severity = $2 WHERE id = $1`,
       [active.id, target.severityDefault],
+    );
+    await recordIncidentEvent(
+      {
+        incidentId: active.id,
+        kind: 'severity_escalated',
+        summary: `Promoted to OUTAGE (${active.severity} → ${target.severityDefault}) — a DOWN check while degraded`,
+        detail: { from: active.severity, to: target.severityDefault },
+        source: 'state_machine',
+      },
+      client,
     );
     active = { ...active, incidentType: 'OUTAGE', severity: target.severityDefault };
   }

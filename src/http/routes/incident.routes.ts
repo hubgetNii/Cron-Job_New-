@@ -11,6 +11,7 @@ import {
   resolveIncidentManually,
   setIncidentRootCause,
 } from '../../services/incident/incident.service.js';
+import { incidentTimeline } from '../../repositories/incident-events.repo.js';
 
 export const incidentRouter: Router = Router();
 
@@ -38,6 +39,13 @@ incidentRouter.get('/incidents', async (req: Request, res: Response) => {
 incidentRouter.get('/incidents/:id', async (req: Request, res: Response) => {
   const incident = await getIncidentById(idParam.parse(req.params.id));
   res.json({ data: incident });
+});
+
+// The merged incident timeline (spec §12) — recorded events + alert rows +
+// lifecycle timestamps, ordered.
+incidentRouter.get('/incidents/:id/timeline', async (req: Request, res: Response) => {
+  const timeline = await incidentTimeline(idParam.parse(req.params.id));
+  res.json({ data: timeline, count: timeline.length });
 });
 
 incidentRouter.post(

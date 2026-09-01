@@ -6,6 +6,7 @@ import type { CheckFailureType, HealthStatus } from '../../domain/enums.js';
 import type { HealthCheckOutcome } from '../../domain/health-check.js';
 import { insertHealthCheckResult, recordRunOutcome } from '../../repositories/scheduler.repo.js';
 import { findActiveIncident, listIncidents } from '../../repositories/incidents.repo.js';
+import { incidentTimeline } from '../../repositories/incident-events.repo.js';
 import { processCheckOutcome, type IncidentTransition } from './state-machine.service.js';
 
 const dbUp = (await checkDbHealth()).ok;
@@ -85,11 +86,13 @@ describe.skipIf(!dbUp)('incident state machine (Phase 6)', () => {
     await query(`DELETE FROM monitored_apis`);
     await closePool();
   });
+  // incident_events cascade-delete with incidents / monitored_apis
   beforeEach(async () => {
     await query(`DELETE FROM alerts`);
     await query(`DELETE FROM incidents`);
     await query(`DELETE FROM health_check_results`);
     await query(`DELETE FROM notification_contacts`);
+    await query(`DELETE FROM incident_events`);
     await query(
       `UPDATE target_schedule_state SET consecutive_successes = 0, consecutive_failures = 0 WHERE target_id = $1`,
       [target.id],
@@ -142,6 +145,27 @@ describe.skipIf(!dbUp)('incident state machine (Phase 6)', () => {
     const recips = recovered.rows.map((r) => r.recipient);
     expect(recips).toContain('233553476530');
     expect(recips).toContain('233272900200');
+  });
+
+  it('builds a timeline: detected → failure changed → alerts → resolved', async () => {
+    await runCheck('DEGRADED', 'PARTIAL_DEGRADATION'); // opens DEGRADATION
+    await runCheck('DOWN', 'TIMEOUT'); // promote + failure changes to TIMEOUT
+    await runCheck('DOWN', 'HTTP_5XX'); // failure changes again
+    await runCheck('UP');
+    await runCheck('UP'); // recovery streak → resolved
+
+    const inc = (await listIncidents({ apiId: target.id }))[0]!;
+    const tl = await incidentTimeline(inc.id);
+    const kinds = tl.map((e) => e.kind);
+
+    expect(kinds[0]).toBe('detected');
+    expect(kinds).toContain('severity_escalated');
+    expect(kinds.filter((k) => k === 'failure_changed').length).toBeGreaterThanOrEqual(2);
+    expect(kinds).toContain('alert_queued'); // alert rows fold in
+    expect(kinds).toContain('resolved');
+    // strictly ordered
+    const times = tl.map((e) => new Date(e.at).getTime());
+    expect(times).toEqual([...times].sort((a, b) => a - b));
   });
 
   it('increments failure_count without opening a second incident', async () => {
