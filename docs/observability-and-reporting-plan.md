@@ -63,6 +63,20 @@ is resolved*.
 
 ---
 
+## Progress
+
+| Phase | Status |
+| --- | --- |
+| **15** Failure taxonomy · RCA · recommendations | ✅ done — commit `bc69084`. `src/domain/failure-taxonomy.ts`, `src/domain/recommendations.ts`, `src/services/intelligence/rca.service.ts`, `incidents.rca` column, `GET/POST /incidents/:id/rca`, dashboard RCA panel. |
+| **12** Trace capture & masking | ✅ done — commit `79bb5f9`. `src/lib/masking.ts`, `health_check_traces` table (masked + encrypted raw), executor + job-runner capture, `GET /observability/traces*` (search / masked / ADMIN raw-reveal / CSV), Observability dashboard page, hourly retention prune. |
+| **13** Health Check Run aggregation & IDs | next |
+| **14** Latency intelligence | pending |
+| **16** Incident timeline | pending |
+| **17** Health score & historical comparison | pending |
+| **18** Reports & Log Explorer (CSV only) | partial — trace CSV export shipped in 12 |
+| **19** Intelligence-driven notifications + dashboard IA | pending |
+| **20** Retention & audit hardening | partial — trace retention + reveal-audit shipped |
+
 ## Phased delivery
 
 Each phase is independently shippable, tested, committed. Ordering is
