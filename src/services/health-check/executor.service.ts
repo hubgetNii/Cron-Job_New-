@@ -2,10 +2,11 @@ import { request } from 'undici';
 import { componentLogger } from '../../lib/logger.js';
 import { assertUrlAllowed, SsrfBlockedError } from '../../lib/ssrf.js';
 import { responseSample } from '../../lib/pci.js';
+import { maskBody, maskHeaders, maskUrl } from '../../lib/masking.js';
 import { findTargetCredentialEnvelope } from '../../repositories/monitored-apis.repo.js';
 import { decryptCredentials } from '../../lib/crypto/credential-cipher.js';
 import type { MonitoredApi } from '../../domain/target.js';
-import type { HealthCheckOutcome } from '../../domain/health-check.js';
+import type { HealthCheckOutcome, RequestResponseTrace } from '../../domain/health-check.js';
 import type { CheckFailureType, HealthStatus } from '../../domain/enums.js';
 import { buildAuthMaterial } from './auth.js';
 import {
@@ -36,6 +37,56 @@ interface AttemptResult {
   errorMessage: string | null;
   validation: HealthCheckOutcome['validation'];
   responseSample: string | null;
+  trace: RequestResponseTrace | null;
+}
+
+interface SentRequest {
+  method: MonitoredApi['method'];
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+}
+
+/** Assembles the trace from what was sent and (optionally) what came back. */
+function buildTrace(
+  sent: SentRequest,
+  responseTimeMs: number | null,
+  response?: {
+    statusCode: number;
+    headers: Record<string, string>;
+    body: string;
+  } | null,
+): RequestResponseTrace {
+  const resHeaders = response?.headers ?? {};
+  const resBody = response?.body ?? null;
+  return {
+    requestMethod: sent.method,
+    requestUrlMasked: maskUrl(sent.url),
+    requestHeadersMasked: maskHeaders(sent.headers),
+    requestBodyMasked: maskBody(sent.body),
+    responseStatus: response?.statusCode ?? null,
+    responseHeadersMasked: maskHeaders(resHeaders),
+    responseBodyMasked: maskBody(resBody),
+    responseBytes: resBody != null ? Buffer.byteLength(resBody) : null,
+    responseContentType: resHeaders['content-type'] ?? null,
+    responseTimeMs,
+    raw: {
+      requestUrl: sent.url,
+      requestHeaders: sent.headers,
+      requestBody: sent.body,
+      responseHeaders: resHeaders,
+      responseBody: resBody,
+    },
+  };
+}
+
+function flattenHeaders(h: Record<string, string | string[] | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(h)) {
+    if (v == null) continue;
+    out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
+  }
+  return out;
 }
 
 async function resolveCredentials(
@@ -71,22 +122,6 @@ async function attempt(
   target: MonitoredApi,
   creds: Record<string, string> | null,
 ): Promise<AttemptResult> {
-  const preflight = await preflightSsrf(target);
-  if (preflight) {
-    return {
-      status: preflight === 'DNS_ERROR' ? 'DOWN' : 'UNKNOWN',
-      httpStatus: null,
-      responseTimeMs: null,
-      failureType: preflight,
-      errorMessage:
-        preflight === 'DNS_ERROR'
-          ? `DNS resolution failed for ${target.url}`
-          : `Target URL blocked by SSRF policy`,
-      validation: null,
-      responseSample: null,
-    };
-  }
-
   const auth = buildAuthMaterial(target.authenticationType, creds);
   const url = buildUrl(target.url, auth.query);
   const headers: Record<string, string> = {
@@ -104,6 +139,25 @@ async function attempt(
         : JSON.stringify(target.requestBody);
     headers['content-type'] ??= 'application/json';
   }
+  const sent: SentRequest = { method: target.method, url, headers, body };
+
+  const preflight = await preflightSsrf(target);
+  if (preflight) {
+    const status: HealthStatus = preflight === 'DNS_ERROR' ? 'DOWN' : 'UNKNOWN';
+    return {
+      status,
+      httpStatus: null,
+      responseTimeMs: null,
+      failureType: preflight,
+      errorMessage:
+        preflight === 'DNS_ERROR'
+          ? `DNS resolution failed for ${target.url}`
+          : `Target URL blocked by SSRF policy`,
+      validation: null,
+      responseSample: null,
+      trace: buildTrace(sent, null, null),
+    };
+  }
 
   const started = performance.now();
   try {
@@ -116,6 +170,11 @@ async function attempt(
     const raw = await res.body.text();
     const responseTimeMs = Math.round(performance.now() - started);
     const bodyText = raw.length > MAX_BODY_BYTES ? raw.slice(0, MAX_BODY_BYTES) : raw;
+    const response = {
+      statusCode: res.statusCode,
+      headers: flattenHeaders(res.headers),
+      body: bodyText,
+    };
 
     let json: unknown;
     try {
@@ -137,13 +196,15 @@ async function attempt(
         errorMessage: 'Target returned HTTP 429',
         validation,
         responseSample: sample,
+        trace: buildTrace(sent, responseTimeMs, response),
       };
     }
 
     if (validation.passed) {
       const slow = responseTimeMs > target.timeoutMs * DEGRADED_LATENCY_RATIO;
+      const status: HealthStatus = slow ? 'DEGRADED' : 'UP';
       return {
-        status: slow ? 'DEGRADED' : 'UP',
+        status,
         httpStatus: res.statusCode,
         responseTimeMs,
         failureType: null,
@@ -152,6 +213,7 @@ async function attempt(
           : null,
         validation,
         responseSample: sample,
+        trace: buildTrace(sent, responseTimeMs, response),
       };
     }
 
@@ -172,6 +234,7 @@ async function attempt(
         : `Unexpected response (HTTP ${res.statusCode})`,
       validation,
       responseSample: sample,
+      trace: buildTrace(sent, responseTimeMs, response),
     };
   } catch (err) {
     const responseTimeMs = Math.round(performance.now() - started);
@@ -184,6 +247,7 @@ async function attempt(
       errorMessage: err instanceof Error ? err.message : String(err),
       validation: null,
       responseSample: null,
+      trace: buildTrace(sent, responseTimeMs, null),
     };
   }
 }
@@ -239,6 +303,7 @@ export async function executeCheck(
     validation: result.validation,
     attempts,
     responseSample: result.responseSample,
+    trace: result.trace,
     checkedAt: new Date(),
   };
 }

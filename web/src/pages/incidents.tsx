@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { IncidentStatusBadge, SeverityBadge } from '@/components/status-badge';
 import { IncidentAiPanel } from '@/components/incident-ai-panel';
+import { IncidentRcaPanel } from '@/components/incident-rca-panel';
 
 function fmtDuration(secs: number | null): string {
   if (secs == null) return '—';
@@ -147,6 +148,8 @@ export function IncidentsPage() {
                   </dd>
                 </div>
               </dl>
+
+              <IncidentRcaPanel incidentId={detail.data.id} />
 
               <IncidentAiPanel incidentId={detail.data.id} />
 

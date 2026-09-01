@@ -241,6 +241,76 @@ export interface AnomalySignal {
   note: string;
 }
 
+export interface TraceRow {
+  id: string;
+  checkId: string;
+  apiId: string;
+  targetName: string | null;
+  jobRunId: string | null;
+  requestId: string;
+  correlationId: string;
+  checkedAt: string;
+  requestMethod: string;
+  requestUrlMasked: string;
+  requestHeadersMasked: Record<string, string>;
+  requestBodyMasked: string | null;
+  responseStatus: number | null;
+  responseHeadersMasked: Record<string, string>;
+  responseBodyMasked: string | null;
+  responseBytes: number | null;
+  responseContentType: string | null;
+  responseTimeMs: number | null;
+  attempts: number;
+  healthStatus: HealthStatus;
+  failureType: string | null;
+  hasRaw: boolean;
+}
+
+export interface RawTrace {
+  requestUrl: string;
+  requestHeaders: Record<string, string>;
+  requestBody: string | null;
+  responseHeaders: Record<string, string>;
+  responseBody: string | null;
+}
+
+export interface TraceSearchParams {
+  apiId?: string;
+  healthStatus?: HealthStatus;
+  httpStatus?: string;
+  statusClass?: '2xx' | '3xx' | '4xx' | '5xx';
+  failureType?: string;
+  requestId?: string;
+  correlationId?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RcaRecommendation {
+  finding: string;
+  recommendation: string;
+  priority: 'P1' | 'P2' | 'P3';
+}
+
+export interface RootCauseAnalysis {
+  generatedAt: string;
+  method: 'deterministic';
+  category: string;
+  subtype: string;
+  summary: string;
+  evidence: string[];
+  probableCause: string;
+  confidence: number;
+  impact: string;
+  recommendation: RcaRecommendation;
+  occurrences24h: number;
+  latency: { baselineMs: number; recentMs: number; ratio: number } | null;
+  assistive: true;
+}
+
 export interface TestOutcome {
   status: HealthStatus;
   httpStatus: number | null;

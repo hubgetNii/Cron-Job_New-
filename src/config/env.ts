@@ -56,6 +56,9 @@ const EnvSchema = z.object({
   ANOMALY_Z_THRESHOLD: z.coerce.number().positive().default(3),
   ANOMALY_MIN_BASELINE_SAMPLES: z.coerce.number().int().positive().default(30),
 
+  // Observability traces (Phase 12). Retention in days; the prune runs hourly.
+  TRACE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+
   // Reporting (Phase 11).
   SLA_REPORT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
   STATUS_PAGE_ENABLED: BoolFromString.default('true'),

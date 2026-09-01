@@ -61,11 +61,12 @@ export function isCredentialEnvelope(value: unknown): value is CredentialEnvelop
   );
 }
 
-export function encryptCredentials(plaintext: Record<string, string>): CredentialEnvelope {
+/** Seals any JSON-serialisable value into an envelope with the local KEK. */
+export function encryptJson(value: unknown): CredentialEnvelope {
   const k = key();
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALG, k, iv);
-  const enc = Buffer.concat([cipher.update(JSON.stringify(plaintext), 'utf8'), cipher.final()]);
+  const enc = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
   return {
     v: 1,
     alg: 'aes-256-gcm',
@@ -76,10 +77,11 @@ export function encryptCredentials(plaintext: Record<string, string>): Credentia
   };
 }
 
-export function decryptCredentials(envelope: CredentialEnvelope): Record<string, string> {
+/** Opens an envelope sealed by {@link encryptJson}. */
+export function decryptJson<T = unknown>(envelope: CredentialEnvelope): T {
   const k = key();
   if (envelope.keyId !== keyId(k)) {
-    throw new Error('credential envelope was sealed with a different key');
+    throw new Error('envelope was sealed with a different key');
   }
   const decipher = createDecipheriv(ALG, k, Buffer.from(envelope.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
@@ -87,7 +89,15 @@ export function decryptCredentials(envelope: CredentialEnvelope): Record<string,
     decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
     decipher.final(),
   ]);
-  return JSON.parse(dec.toString('utf8')) as Record<string, string>;
+  return JSON.parse(dec.toString('utf8')) as T;
+}
+
+export function encryptCredentials(plaintext: Record<string, string>): CredentialEnvelope {
+  return encryptJson(plaintext);
+}
+
+export function decryptCredentials(envelope: CredentialEnvelope): Record<string, string> {
+  return decryptJson<Record<string, string>>(envelope);
 }
 
 /** Test-only. */

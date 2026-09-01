@@ -20,6 +20,7 @@ const upOutcome = (): HealthCheckOutcome => ({
   validation: { passed: true, results: [] },
   attempts: 1,
   responseSample: '{"ok":true}',
+  trace: null,
   checkedAt: new Date(),
 });
 

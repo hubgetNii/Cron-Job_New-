@@ -29,6 +29,7 @@ function outcome(
     validation: null,
     attempts: 1,
     responseSample: null,
+    trace: null,
     checkedAt,
   };
 }

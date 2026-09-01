@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import type { TraceSearchParams } from './types';
 
 const LIVE = 10_000; // poll every 10s — the dashboard is a live view
 
@@ -75,6 +76,37 @@ export function useAnalyzeIncident(id: string | null) {
     },
   });
 }
+
+export const useIncidentRca = (id: string | null) =>
+  useQuery({
+    queryKey: ['incident-rca', id],
+    queryFn: () => api.incidentRca(id!),
+    enabled: id != null,
+    refetchInterval: LIVE,
+  });
+
+export function useRecomputeRca(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.recomputeIncidentRca(id!),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['incident-rca', id] }),
+  });
+}
+
+export const useTraces = (params: TraceSearchParams) =>
+  useQuery({
+    queryKey: ['traces', params],
+    queryFn: () => api.traces(params),
+    refetchInterval: LIVE,
+    placeholderData: (prev) => prev,
+  });
+
+export const useTrace = (checkId: string | null) =>
+  useQuery({
+    queryKey: ['trace', checkId],
+    queryFn: () => api.trace(checkId!),
+    enabled: checkId != null,
+  });
 
 export const useSlaSummary = () =>
   useQuery({ queryKey: ['sla-summary'], queryFn: api.slaSummary, refetchInterval: 30_000 });

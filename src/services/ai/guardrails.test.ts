@@ -72,6 +72,7 @@ describe.skipIf(!dbUp)('AI guardrails (Phase 10)', () => {
         validation: null,
         attempts: 1,
         responseSample: null,
+        trace: null,
         checkedAt: new Date(),
       },
     });

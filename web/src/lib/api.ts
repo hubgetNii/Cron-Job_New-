@@ -11,11 +11,15 @@ import type {
   MissedRun,
   PerfBucket,
   PublicStatus,
+  RawTrace,
+  RootCauseAnalysis,
   SlaReport,
   SlaSummaryRow,
   Target,
   TargetStatusRow,
   TestOutcome,
+  TraceRow,
+  TraceSearchParams,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1';
@@ -102,6 +106,16 @@ export interface LoginResponse {
 
 type Wrapped<T> = { data: T; count?: number };
 
+/** Serialises trace-search params, dropping empties. Also used for the CSV export URL. */
+export function traceQuery(params: Record<string, unknown>): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '' && v !== null) qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return s ? `?${s}` : '';
+}
+
 export const api = {
   dashboardSummary: () => req<Wrapped<DashboardSummary>>('/dashboard/summary').then((r) => r.data),
   performance: (hours = 6) =>
@@ -154,6 +168,22 @@ export const api = {
     req<Wrapped<AiInsight[]>>(`/anomalies?hours=${hours}`).then((r) => r.data),
   targetAnomalies: (id: string) =>
     req<Wrapped<AnomalySignal[]>>(`/targets/${id}/anomalies`).then((r) => r.data),
+
+  incidentRca: (id: string) =>
+    req<Wrapped<RootCauseAnalysis | null>>(`/incidents/${id}/rca`).then((r) => r.data),
+  recomputeIncidentRca: (id: string) =>
+    req<Wrapped<RootCauseAnalysis>>(`/incidents/${id}/rca/recompute`, { method: 'POST' }).then(
+      (r) => r.data,
+    ),
+
+  traces: (params: TraceSearchParams) =>
+    req<Wrapped<TraceRow[]> & { total: number }>(
+      `/observability/traces${traceQuery(params as Record<string, unknown>)}`,
+    ).then((r) => ({ rows: r.data, total: r.total })),
+  trace: (checkId: string) =>
+    req<Wrapped<TraceRow>>(`/observability/traces/${checkId}`).then((r) => r.data),
+  revealTrace: (checkId: string) =>
+    req<Wrapped<RawTrace>>(`/observability/traces/${checkId}/raw`).then((r) => r.data),
 
   slaSummary: () =>
     req<Wrapped<{ targets: SlaSummaryRow[]; meeting: number; breaching: number }>>(

@@ -16,6 +16,7 @@ import {
   recordRunOutcome,
   recordSkippedRun,
 } from '../../repositories/scheduler.repo.js';
+import { insertTrace, newRequestId } from '../../repositories/health-check-traces.repo.js';
 
 const log = componentLogger('job-runner');
 
@@ -115,6 +116,23 @@ export async function runScheduledCheck(
           { apiId: target.id, jobRunId: runId, outcome },
           client,
         );
+        if (checkId && outcome.trace) {
+          await insertTrace(
+            {
+              checkId,
+              apiId: target.id,
+              jobRunId: runId,
+              requestId: newRequestId(),
+              correlationId: runId,
+              checkedAt: outcome.checkedAt,
+              healthStatus: outcome.status,
+              attempts: outcome.attempts,
+              failureType: outcome.failureType,
+              trace: outcome.trace,
+            },
+            client,
+          );
+        }
         const counters = await recordRunOutcome(
           { targetId: target.id, scheduledSlot, status: outcome.status },
           client,

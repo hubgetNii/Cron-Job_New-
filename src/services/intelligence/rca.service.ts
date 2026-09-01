@@ -17,6 +17,7 @@ import { NotFoundError } from '../../lib/errors.js';
 import { getIncident } from '../../repositories/incidents.repo.js';
 import { findTargetById } from '../../repositories/monitored-apis.repo.js';
 import { getRecentHealthChecks } from '../../repositories/dashboard.repo.js';
+import { getTraceByCheckId } from '../../repositories/health-check-traces.repo.js';
 import {
   classifyFailure,
   type FailureCategory,
@@ -179,10 +180,13 @@ export async function buildRootCauseAnalysis(incidentId: string): Promise<RootCa
     return n;
   })();
 
+  // Pull the response body from the trace of the worst failing check, if captured.
+  const worstTrace = worst ? await getTraceByCheckId(worst.id) : null;
   const classification = classifyFailure({
-    failureType: incident.failureType ?? worst?.errorType as CheckFailureType | null ?? null,
+    failureType: incident.failureType ?? (worst?.errorType as CheckFailureType | null) ?? null,
     httpStatus: worst?.httpStatus ?? null,
     errorMessage: worst?.errorMessage ?? null,
+    responseSample: worstTrace?.responseBodyMasked ?? null,
   });
 
   const latency = await latencyDelta(incident.apiId, incident.startedAt);
@@ -209,6 +213,10 @@ export async function buildRootCauseAnalysis(incidentId: string): Promise<RootCa
   }
   if (worst?.errorType) evidence.push(`Recorded failure type: ${worst.errorType}`);
   if (worst?.errorMessage) evidence.push(`Last error: ${worst.errorMessage}`);
+  if (worstTrace?.responseBodyMasked) {
+    const snippet = worstTrace.responseBodyMasked.slice(0, 240);
+    evidence.push(`Response body (masked): ${snippet}${worstTrace.responseBodyMasked.length > 240 ? '…' : ''}`);
+  }
   if (consecutiveFailures > 0) {
     evidence.push(`${consecutiveFailures} consecutive failed check${consecutiveFailures > 1 ? 's' : ''}`);
   }
