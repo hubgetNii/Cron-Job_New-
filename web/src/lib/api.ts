@@ -206,6 +206,11 @@ export const api = {
   revealTrace: (checkId: string) =>
     req<Wrapped<RawTrace>>(`/observability/traces/${checkId}/raw`).then((r) => r.data),
 
+  report: (type: string, fromIso: string, toIso: string) =>
+    req<Wrapped<{ type: string; generatedAt: string; period: { from: string; to: string }; data: unknown }>>(
+      `/reports/${type}?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+    ).then((r) => r.data),
+
   slaSummary: () =>
     req<Wrapped<{ targets: SlaSummaryRow[]; meeting: number; breaching: number }>>(
       '/sla/summary',

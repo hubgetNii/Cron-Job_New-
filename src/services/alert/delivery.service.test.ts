@@ -88,6 +88,36 @@ describe.skipIf(!dbUp)('alert delivery (Phase 7)', () => {
     expect(await status(a.id)).toBe('SENT');
   });
 
+  it('enriches the body with the RCA probable cause + impact (spec §18)', async () => {
+    await query(`UPDATE incidents SET rca = $2 WHERE id = $1`, [
+      incidentId,
+      JSON.stringify({
+        method: 'deterministic',
+        category: 'DEPENDENCY',
+        probableCause: 'A downstream dependency is unavailable (HTTP 503).',
+        impact: 'Money-moving endpoint — payment transactions may be affected.',
+        summary: 's',
+        evidence: [],
+        confidence: 0.8,
+        recommendation: { finding: 'HTTP 503', recommendation: 'x', priority: 'P1' },
+        occurrences24h: 1,
+        latency: null,
+        assistive: true,
+      }),
+    ]);
+    await createAlert({
+      alertType: 'API_DOWN',
+      channel: 'WEBHOOK',
+      recipient: 'ops',
+      incidentId,
+      apiId: targetId,
+    });
+    await runDeliveryCycle();
+    expect(sent[0]!.body).toMatch(/Probable cause: A downstream dependency is unavailable/);
+    expect(sent[0]!.body).toMatch(/Impact: Money-moving endpoint/);
+    await query(`UPDATE incidents SET rca = NULL WHERE id = $1`, [incidentId]);
+  });
+
   it('marks a failed delivery FAILED', async () => {
     const a = await createAlert({
       alertType: 'ESCALATION_TRIGGERED',

@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  FileText,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -17,14 +18,15 @@ import { authStore } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const NAV = [
-  { to: '/app', label: 'Overview', Icon: LayoutDashboard, end: true },
-  { to: '/app/targets', label: 'Targets', Icon: Radar },
+  { to: '/app', label: 'Dashboard', Icon: LayoutDashboard, end: true },
+  { to: '/app/targets', label: 'Services', Icon: Radar },
   { to: '/app/incidents', label: 'Incidents', Icon: Siren },
   { to: '/app/observability', label: 'Observability', Icon: ScrollText },
   { to: '/app/scheduler', label: 'Scheduler', Icon: Activity },
-  { to: '/app/alerts', label: 'Alerts', Icon: ListChecks },
-  { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
+  { to: '/app/alerts', label: 'Notifications', Icon: ListChecks },
   { to: '/app/sla', label: 'SLA', Icon: Gauge },
+  { to: '/app/reports', label: 'Reports', Icon: FileText },
+  { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
 ];
 
 export function AppShell() {

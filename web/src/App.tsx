@@ -13,6 +13,7 @@ import { ApprovalsPage } from '@/pages/approvals';
 import { SlaPage } from '@/pages/sla';
 import { StatusPage } from '@/pages/status';
 import { ObservabilityPage } from '@/pages/observability';
+import { ReportsPage } from '@/pages/reports';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },
@@ -41,6 +42,7 @@ const router = createBrowserRouter([
           { path: 'alerts', element: <AlertsPage /> },
           { path: 'approvals', element: <ApprovalsPage /> },
           { path: 'sla', element: <SlaPage /> },
+          { path: 'reports', element: <ReportsPage /> },
         ],
       },
     ],

@@ -72,10 +72,10 @@ is resolved*.
 | **13** Health Check Run aggregation & IDs | ✅ done — `health_check_runs` table + `HC-YYYYMMDD-HHMMSS-NNNNNN` IDs, 5-min roll-up runner, `health_check_results.hc_run_id` backlink, `GET /observability/health-checks[/:hcId]`, dashboard runs table + per-service drawer. `npm run demo:reset` wipes history and backfills ~98% uptime. |
 | **14** Latency intelligence | ✅ done — `latency_thresholds` table + class-based defaults (`src/domain/latency.ts`), `latency-stats.service.ts` (P50/P90/P95/P99 + current/avg/min/max over a window, 7-day baseline, deviation %, assessment from P95 vs bands), `GET /observability/latency[/:apiId]`, `PUT/DELETE /observability/latency/:apiId/thresholds` (ADMIN), dashboard "Latency intelligence" table + detail drawer. |
 | **16** Incident timeline | ✅ done — `incident_events` table, `recordIncidentEvent()` from the state machine (failure_changed / severity_escalated / flapping_detected) + job-runner post-commit (rca_computed / database_error / dependency_error / latency_elevated). `GET /incidents/:id/timeline` merges events + alert rows + lifecycle timestamps. Dashboard incident-drawer timeline panel. |
-| **17** Health score & historical comparison | pending |
-| **18** Reports & Log Explorer (CSV only) | partial — trace CSV export shipped in 12 |
-| **19** Intelligence-driven notifications + dashboard IA | pending |
-| **20** Retention & audit hardening | partial — trace retention + reveal-audit shipped |
+| **17** Health score & historical comparison | ✅ done — `src/domain/health-score.ts` (weighted, configurable), `health-score.service.ts` (4 sub-scores + latency-vs-yesterday, failure-rate 2h trend, Nth-in-24h), `GET /observability/health-score[/:apiId]`, dashboard scores table + drawer. |
+| **18** Reports & Log Explorer | ✅ done — `reports.service.ts` builds system-health / api-performance / failure / incident / dependency / latency / security / executive; `GET /reports/:type?from&to&format=json\|csv`; dashboard **Reports** page. Log Explorer + trace CSV shipped in 12. Excel/PDF still deferred. |
+| **19** Intelligence-driven notifications + dashboard IA | ✅ done — incident alert bodies now carry the RCA probable cause + impact (down) / current latency (recovery); nav reorganised (Dashboard · Services · Incidents · Observability · Scheduler · Notifications · SLA · Reports · Approvals). |
+| **20** Retention & audit hardening | partial — trace retention + reveal-audit + HC-run retention + latency-threshold audit shipped; partitioning still open |
 
 ## Phased delivery
 
