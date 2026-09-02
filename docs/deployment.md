@@ -168,11 +168,31 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 docker compose -f docker-compose.prod.yml down
 ```
 
+### Audit-trail hardening (one-time, per environment)
+
+`audit_logs` is append-only at the application layer (a trigger blocks
+UPDATE/DELETE). Add the privilege-layer guard too — run once as the DB
+superuser after the app role exists:
+
+```bash
+psql "$SUPERUSER_DATABASE_URL" -v app_role=cronmon -f scripts/harden-audit.sql
+```
+
+### Retention
+
+The scheduler runs a **retention sweep** every `RETENTION_SWEEP_HOURS` (6) that
+prunes each operational class past its window:
+`health_check_results` 90d · `health_check_traces` 30d · `health_check_runs` 90d ·
+`cron_job_runs` 45d · `scheduler_heartbeats` 7d · delivered `alerts` 120d ·
+`health_digests` 180d. `incidents`, `audit_logs`, `sla_reports` and
+`incident_events` are **never** pruned. All windows are env-configurable
+(`RETENTION_*`). Check status at `GET /api/v1/observability/retention`; force a
+sweep with `POST /api/v1/observability/retention/run` (ADMIN).
+
 ### Resource notes
 
 - The scheduler is a 1 s tick loop but nearly idle between checks; CPU is tiny.
-- Postgres grows with `health_check_results` — one row per check per target.
-  Add a retention job (`DELETE FROM health_check_results WHERE checked_at < now() - interval '90 days'`)
-  when the target count gets large.
+- Postgres growth is bounded by the retention sweep above; the big append-only
+  tables also carry BRIN indexes on their time column for cheap range scans.
 - Gmail sending caps at ~500/day. Fine for the digest + a few incident emails;
   move to Workspace / SES if the email contact list grows.

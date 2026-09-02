@@ -75,7 +75,7 @@ is resolved*.
 | **17** Health score & historical comparison | ✅ done — `src/domain/health-score.ts` (weighted, configurable), `health-score.service.ts` (4 sub-scores + latency-vs-yesterday, failure-rate 2h trend, Nth-in-24h), `GET /observability/health-score[/:apiId]`, dashboard scores table + drawer. |
 | **18** Reports & Log Explorer | ✅ done — `reports.service.ts` builds system-health / api-performance / failure / incident / dependency / latency / security / executive; `GET /reports/:type?from&to&format=json\|csv`; dashboard **Reports** page. Log Explorer + trace CSV shipped in 12. Excel/PDF still deferred. |
 | **19** Intelligence-driven notifications + dashboard IA | ✅ done — incident alert bodies now carry the RCA probable cause + impact (down) / current latency (recovery); nav reorganised (Dashboard · Services · Incidents · Observability · Scheduler · Notifications · SLA · Reports · Approvals). |
-| **20** Retention & audit hardening | partial — trace retention + reveal-audit + HC-run retention + latency-threshold audit shipped; partitioning still open |
+| **20** Retention & audit hardening | ✅ done — unified `retention.service.ts` sweeps every class past its `RETENTION_*` window (immutable classes never pruned), batched deletes, `GET/POST /observability/retention`, dashboard card; BRIN indexes on the big append-only tables' time columns; `scripts/harden-audit.sql` REVOKE + deployment.md. In-place table partitioning deliberately skipped (high risk, BRIN + sweep gets the benefit). |
 
 ## Phased delivery
 

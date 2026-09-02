@@ -8,7 +8,7 @@ import { Scheduler } from '../services/scheduler/scheduler.service.js';
 import { startAlertRunner } from '../services/alert/alert-runner.js';
 import { startReportRunner } from '../services/reporting/report-runner.js';
 import { startDigestRunner } from '../services/digest/digest-runner.js';
-import { startTraceRetention } from '../services/observability/trace-retention.js';
+import { startRetentionRunner } from '../services/observability/retention.service.js';
 import { startHealthCheckRunRunner } from '../services/observability/health-check-run-runner.js';
 
 const log = componentLogger('scheduler');
@@ -25,10 +25,10 @@ async function main(): Promise<void> {
   const alertRunner = startAlertRunner();
   const reportRunner = startReportRunner();
   const digestRunner = startDigestRunner();
-  const traceRetention = startTraceRetention();
+  const retention = startRetentionRunner();
   const runRoller = startHealthCheckRunRunner();
   log.info(
-    'scheduler running (escalation, alert delivery, SLA reporting, SMS health digest, trace retention, health-check runs)',
+    'scheduler running (escalation, alert delivery, SLA reporting, SMS health digest, retention sweep, health-check runs)',
   );
 
   // Pick up target create/update/enable/disable without a restart.
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   onShutdown(() => alertRunner.stop());
   onShutdown(() => reportRunner.stop());
   onShutdown(() => digestRunner.stop());
-  onShutdown(() => traceRetention.stop());
+  onShutdown(() => retention.stop());
   onShutdown(() => runRoller.stop());
   onShutdown(() => scheduler.stop());
   onShutdown(closePool);

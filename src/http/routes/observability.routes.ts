@@ -8,6 +8,7 @@ import {
   allHealthScores,
   serviceHealthScore,
 } from '../../services/observability/health-score.service.js';
+import { retentionStatus, runRetention } from '../../services/observability/retention.service.js';
 import {
   deleteThresholds,
   getThresholds,
@@ -59,6 +60,28 @@ observabilityRouter.get(
   async (req: Request, res: Response) => {
     const { windowMinutes } = windowQuery.parse(req.query);
     res.json({ data: await latencyStats(idParam.parse(req.params.apiId), windowMinutes) });
+  },
+);
+
+/* ── Data retention (spec §17) ──────────────────────────────────────────── */
+
+observabilityRouter.get('/observability/retention', canView, async (_req: Request, res: Response) => {
+  res.json({ data: await retentionStatus() });
+});
+
+observabilityRouter.post(
+  '/observability/retention/run',
+  requireRole('ADMIN'),
+  async (req: Request, res: Response) => {
+    const result = await runRetention();
+    await recordAudit({
+      actor: actorFromRequest(req),
+      action: 'retention.swept',
+      entityType: 'system',
+      summary: `Manual retention sweep — ${result.totalDeleted} rows pruned`,
+      changes: { after: result.pruned },
+    });
+    res.json({ data: result });
   },
 );
 

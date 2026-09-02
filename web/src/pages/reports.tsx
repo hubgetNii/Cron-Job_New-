@@ -1,9 +1,85 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { api, downloadWithAuth } from '@/lib/api';
+import { authStore } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+
+interface RetentionRow {
+  class: string;
+  retentionDays: number | null;
+  rows: number;
+  oldest: string | null;
+  overdue: number;
+}
+
+function RetentionCard() {
+  const isAdmin = authStore.user()?.roles.includes('ADMIN') ?? false;
+  const [rows, setRows] = useState<RetentionRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = (): void => void api.retentionStatus().then(setRows);
+  useEffect(load, []);
+
+  async function sweep(): Promise<void> {
+    setBusy(true);
+    try {
+      await api.runRetentionSweep();
+      load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>Data retention</CardTitle>
+        {isAdmin && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void sweep()}>
+            {busy ? 'Sweeping…' : 'Run sweep now'}
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Class</TH>
+              <TH className="text-right">Retention</TH>
+              <TH className="text-right">Rows</TH>
+              <TH>Oldest</TH>
+              <TH className="text-right">Past window</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {(rows ?? []).map((r) => (
+              <TR key={r.class}>
+                <TD className="font-mono text-xs">{r.class}</TD>
+                <TD className="text-right text-xs text-[var(--color-text-faint)]">
+                  {r.retentionDays == null ? 'kept' : `${r.retentionDays}d`}
+                </TD>
+                <TD className="text-right tabular-nums">{r.rows.toLocaleString()}</TD>
+                <TD className="text-xs text-[var(--color-text-faint)]">
+                  {r.oldest ? new Date(r.oldest).toLocaleDateString() : '—'}
+                </TD>
+                <TD
+                  className="text-right tabular-nums"
+                  style={{ color: r.overdue > 0 ? 'var(--color-degraded)' : undefined }}
+                >
+                  {r.overdue > 0 ? r.overdue.toLocaleString() : '—'}
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+        {!rows && <Skeleton className="h-24 w-full" />}
+      </CardContent>
+    </Card>
+  );
+}
 
 const TYPES: { type: string; label: string; blurb: string }[] = [
   { type: 'executive', label: 'Executive', blurb: 'Business summary — availability, incidents, MTTR, no technical noise.' },
@@ -134,6 +210,8 @@ export function ReportsPage() {
           </CardContent>
         </Card>
       )}
+
+      <RetentionCard />
     </div>
   );
 }

@@ -59,6 +59,16 @@ const EnvSchema = z.object({
   // Observability traces (Phase 12). Retention in days; the prune runs hourly.
   TRACE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
+  // Data retention (Phase 20). The retention job runs every RETENTION_SWEEP_HOURS
+  // and prunes each operational class past its window. Immutable classes
+  // (incidents, audit_logs, sla_reports, config_change_requests) are never pruned.
+  RETENTION_SWEEP_HOURS: z.coerce.number().int().positive().default(6),
+  RETENTION_HEALTH_CHECK_DAYS: z.coerce.number().int().positive().default(90),
+  RETENTION_CRON_RUN_DAYS: z.coerce.number().int().positive().default(45),
+  RETENTION_HEARTBEAT_DAYS: z.coerce.number().int().positive().default(7),
+  RETENTION_ALERT_DAYS: z.coerce.number().int().positive().default(120),
+  RETENTION_DIGEST_DAYS: z.coerce.number().int().positive().default(180),
+
   // Latency intelligence (Phase 14). Current-window size + baseline lookback.
   LATENCY_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
   LATENCY_BASELINE_DAYS: z.coerce.number().int().positive().default(7),

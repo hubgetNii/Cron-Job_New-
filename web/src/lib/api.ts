@@ -206,6 +206,16 @@ export const api = {
   revealTrace: (checkId: string) =>
     req<Wrapped<RawTrace>>(`/observability/traces/${checkId}/raw`).then((r) => r.data),
 
+  retentionStatus: () =>
+    req<Wrapped<
+      { class: string; retentionDays: number | null; rows: number; oldest: string | null; overdue: number }[]
+    >>('/observability/retention').then((r) => r.data),
+  runRetentionSweep: () =>
+    req<Wrapped<{ ranAt: string; totalDeleted: number; pruned: { class: string; deleted: number }[] }>>(
+      '/observability/retention/run',
+      { method: 'POST' },
+    ).then((r) => r.data),
+
   report: (type: string, fromIso: string, toIso: string) =>
     req<Wrapped<{ type: string; generatedAt: string; period: { from: string; to: string }; data: unknown }>>(
       `/reports/${type}?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
