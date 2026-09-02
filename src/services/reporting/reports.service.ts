@@ -3,9 +3,9 @@
  * how to flatten itself to CSV. SLA / compliance already have their own module.
  */
 
-import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { query } from '../../lib/db.js';
+import { rowsToXlsx } from '../../lib/xlsx.js';
 import { listActiveTargets } from '../../repositories/monitored-apis.repo.js';
 import { computeSla } from './sla.service.js';
 import { classifyFailure } from '../../domain/failure-taxonomy.js';
@@ -466,31 +466,8 @@ function flatCell(v: unknown): string | number | boolean {
 
 /* --- XLSX ------------------------------------------------------------------ */
 
-export async function reportToXlsx(report: Report<unknown>): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'FinTech Cron Monitor';
-  wb.created = new Date();
-
-  const used = new Set<string>();
-  for (const table of reportTables(report)) {
-    // Excel sheet names: ≤31 chars, unique, no []*?/\:
-    let name = table.name.replace(/[[\]*?/\\:]/g, ' ').slice(0, 31) || 'Sheet';
-    let n = 1;
-    while (used.has(name.toLowerCase())) name = `${table.name.slice(0, 28)} ${++n}`;
-    used.add(name.toLowerCase());
-
-    const ws = wb.addWorksheet(name);
-    const headers = Object.keys(table.rows[0] ?? {});
-    ws.columns = headers.map((h) => ({ header: titleCase(h), key: h, width: Math.min(40, Math.max(12, h.length + 4)) }));
-    for (const row of table.rows) {
-      ws.addRow(Object.fromEntries(headers.map((h) => [h, flatCell(row[h])])));
-    }
-    ws.getRow(1).font = { bold: true };
-    ws.views = [{ state: 'frozen', ySplit: 1 }];
-  }
-
-  const arr = await wb.xlsx.writeBuffer();
-  return Buffer.from(arr);
+export function reportToXlsx(report: Report<unknown>): Promise<Buffer> {
+  return rowsToXlsx(reportTables(report));
 }
 
 /* --- PDF ----------------------------------------------------------------- */

@@ -547,11 +547,11 @@ export function ObservabilityPage() {
     setParams(next);
   };
 
-  async function exportCsv(): Promise<void> {
+  async function exportTraces(format: 'csv' | 'xlsx'): Promise<void> {
     const { limit: _l, offset: _o, ...rest } = search;
     await downloadWithAuth(
-      `/observability/traces/export${traceQuery(rest as Record<string, unknown>)}`,
-      `observability-traces-${new Date().toISOString().slice(0, 10)}.csv`,
+      `/observability/traces/export${traceQuery({ ...rest, format } as Record<string, unknown>)}`,
+      `observability-traces-${new Date().toISOString().slice(0, 10)}.${format}`,
     );
   }
 
@@ -562,9 +562,14 @@ export function ObservabilityPage() {
         <span className="text-sm text-[var(--color-text-faint)]">
           {total.toLocaleString()} traces{isFetching ? ' · refreshing…' : ''}
         </span>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => void exportCsv()}>
-          <Download className="mr-1 size-4" /> Download CSV
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void exportTraces('csv')}>
+            <Download className="mr-1 size-4" /> CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void exportTraces('xlsx')}>
+            <Download className="mr-1 size-4" /> Excel
+          </Button>
+        </div>
       </div>
 
       <Card>

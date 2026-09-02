@@ -9,6 +9,7 @@ import {
   serviceHealthScore,
 } from '../../services/observability/health-score.service.js';
 import { retentionStatus, runRetention } from '../../services/observability/retention.service.js';
+import { rowsToXlsx } from '../../lib/xlsx.js';
 import {
   deleteThresholds,
   getThresholds,
@@ -241,40 +242,44 @@ const csvCell = (v: string | number | null): string => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+const TRACE_EXPORT_HEADERS = [
+  'checked_at',
+  'request_id',
+  'correlation_id',
+  'service',
+  'method',
+  'url_masked',
+  'http_status',
+  'health_status',
+  'failure_type',
+  'response_time_ms',
+  'response_bytes',
+  'attempts',
+] as const;
+
+function traceExportRow(r: TraceRow): Record<(typeof TRACE_EXPORT_HEADERS)[number], string | number | null> {
+  return {
+    checked_at: r.checkedAt,
+    request_id: r.requestId,
+    correlation_id: r.correlationId,
+    service: r.targetName ?? r.apiId,
+    method: r.requestMethod,
+    url_masked: r.requestUrlMasked,
+    http_status: r.responseStatus,
+    health_status: r.healthStatus,
+    failure_type: r.failureType,
+    response_time_ms: r.responseTimeMs,
+    response_bytes: r.responseBytes,
+    attempts: r.attempts,
+  };
+}
+
 function tracesToCsv(rows: TraceRow[]): string {
-  const header = [
-    'checked_at',
-    'request_id',
-    'correlation_id',
-    'service',
-    'method',
-    'url_masked',
-    'http_status',
-    'health_status',
-    'failure_type',
-    'response_time_ms',
-    'response_bytes',
-    'attempts',
-  ];
-  const lines = rows.map((r) =>
-    [
-      r.checkedAt,
-      r.requestId,
-      r.correlationId,
-      r.targetName ?? r.apiId,
-      r.requestMethod,
-      r.requestUrlMasked,
-      r.responseStatus,
-      r.healthStatus,
-      r.failureType,
-      r.responseTimeMs,
-      r.responseBytes,
-      r.attempts,
-    ]
-      .map(csvCell)
-      .join(','),
-  );
-  return [header.join(','), ...lines].join('\n');
+  const lines = rows.map((r) => {
+    const rec = traceExportRow(r);
+    return TRACE_EXPORT_HEADERS.map((h) => csvCell(rec[h])).join(',');
+  });
+  return [TRACE_EXPORT_HEADERS.join(','), ...lines].join('\n');
 }
 
 observabilityRouter.get(
@@ -282,11 +287,28 @@ observabilityRouter.get(
   canView,
   async (req: Request, res: Response) => {
     const q = searchQuery.parse(req.query);
+    const format = z.enum(['csv', 'xlsx']).optional().parse(req.query['format']) ?? 'csv';
     const { rows } = await searchTraces({ ...toFilters(q), limit: 5000, offset: 0 });
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'xlsx') {
+      const xlsx = await rowsToXlsx([{ name: 'Traces', rows: rows.map(traceExportRow) }]);
+      res.setHeader(
+        'content-type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader(
+        'content-disposition',
+        `attachment; filename="observability-traces-${stamp}.xlsx"`,
+      );
+      res.send(xlsx);
+      return;
+    }
+
     res.setHeader('content-type', 'text/csv; charset=utf-8');
     res.setHeader(
       'content-disposition',
-      `attachment; filename="observability-traces-${new Date().toISOString().slice(0, 10)}.csv"`,
+      `attachment; filename="observability-traces-${stamp}.csv"`,
     );
     res.send(tracesToCsv(rows));
   },
