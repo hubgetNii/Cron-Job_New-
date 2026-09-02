@@ -3,6 +3,8 @@
  * how to flatten itself to CSV. SLA / compliance already have their own module.
  */
 
+import ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 import { query } from '../../lib/db.js';
 import { listActiveTargets } from '../../repositories/monitored-apis.repo.js';
 import { computeSla } from './sla.service.js';
@@ -396,6 +398,171 @@ export function reportToCsv(report: Report<unknown>): string {
   const headers = Object.keys(rows[0]!);
   const lines = rows.map((r) => headers.map((h) => cell(r[h])).join(','));
   return [headers.join(','), ...lines].join('\n');
+}
+
+/* --- table extraction (shared by XLSX + PDF) --------------------------- */
+
+export interface ReportTable {
+  name: string;
+  rows: Array<Record<string, unknown>>;
+}
+
+const titleCase = (s: string): string =>
+  s
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/^\w/, (c) => c.toUpperCase());
+
+function isRowArray(v: unknown): v is Array<Record<string, unknown>> {
+  return (
+    Array.isArray(v) &&
+    v.length > 0 &&
+    v.every((x) => x != null && typeof x === 'object' && !Array.isArray(x))
+  );
+}
+
+/** Every tabular slice of a report, for the multi-sheet / multi-section exports. */
+export function reportTables(report: Report<unknown>): ReportTable[] {
+  const tables: ReportTable[] = [
+    {
+      name: 'Report',
+      rows: [
+        {
+          type: report.type,
+          generatedAt: report.generatedAt,
+          from: report.period.from,
+          to: report.period.to,
+        },
+      ],
+    },
+  ];
+
+  const data = report.data;
+  if (isRowArray(data)) {
+    tables.push({ name: 'Data', rows: data });
+    return tables;
+  }
+  if (data == null || typeof data !== 'object') return tables;
+
+  const summary: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (isRowArray(value)) {
+      tables.push({ name: titleCase(key), rows: value });
+    } else if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+      tables.push({ name: titleCase(key), rows: [value as Record<string, unknown>] });
+    } else if (value != null && !Array.isArray(value)) {
+      summary[key] = value;
+    }
+  }
+  if (Object.keys(summary).length > 0) tables.splice(1, 0, { name: 'Summary', rows: [summary] });
+  return tables;
+}
+
+function flatCell(v: unknown): string | number | boolean {
+  if (v == null) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v;
+  return JSON.stringify(v);
+}
+
+/* --- XLSX ------------------------------------------------------------------ */
+
+export async function reportToXlsx(report: Report<unknown>): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'FinTech Cron Monitor';
+  wb.created = new Date();
+
+  const used = new Set<string>();
+  for (const table of reportTables(report)) {
+    // Excel sheet names: ≤31 chars, unique, no []*?/\:
+    let name = table.name.replace(/[[\]*?/\\:]/g, ' ').slice(0, 31) || 'Sheet';
+    let n = 1;
+    while (used.has(name.toLowerCase())) name = `${table.name.slice(0, 28)} ${++n}`;
+    used.add(name.toLowerCase());
+
+    const ws = wb.addWorksheet(name);
+    const headers = Object.keys(table.rows[0] ?? {});
+    ws.columns = headers.map((h) => ({ header: titleCase(h), key: h, width: Math.min(40, Math.max(12, h.length + 4)) }));
+    for (const row of table.rows) {
+      ws.addRow(Object.fromEntries(headers.map((h) => [h, flatCell(row[h])])));
+    }
+    ws.getRow(1).font = { bold: true };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  const arr = await wb.xlsx.writeBuffer();
+  return Buffer.from(arr);
+}
+
+/* --- PDF ----------------------------------------------------------------- */
+
+export function reportToPdf(report: Report<unknown>): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40, layout: 'landscape' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).text(`${titleCase(report.type)} report`, { continued: false });
+    doc
+      .fontSize(9)
+      .fillColor('#666')
+      .text(
+        `Period ${report.period.from.slice(0, 10)} → ${report.period.to.slice(0, 10)}  ·  generated ${report.generatedAt.slice(0, 19).replace('T', ' ')}`,
+      );
+    doc.fillColor('#000').moveDown(0.6);
+
+    const tables = reportTables(report).filter((t) => t.name !== 'Report');
+    for (const table of tables) {
+      if (table.rows.length === 0) continue;
+      doc.moveDown(0.4).fontSize(12).text(table.name);
+      doc.moveDown(0.2);
+      const headers = Object.keys(table.rows[0]!);
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const colW = pageWidth / headers.length;
+      const drawRow = (values: string[], bold: boolean): void => {
+        const y = doc.y;
+        doc.fontSize(7).font(bold ? 'Helvetica-Bold' : 'Helvetica');
+        headers.forEach((_, i) => {
+          doc.text(values[i] ?? '', doc.page.margins.left + i * colW, y, {
+            width: colW - 4,
+            height: 10,
+            ellipsis: true,
+            lineBreak: false,
+          });
+        });
+        doc.moveDown(0.9);
+        if (doc.y > doc.page.height - doc.page.margins.bottom - 20) doc.addPage();
+      };
+      drawRow(headers.map(titleCase), true);
+      for (const row of table.rows.slice(0, 500)) {
+        drawRow(headers.map((h) => String(flatCell(row[h]))), false);
+      }
+      if (table.rows.length > 500) {
+        doc.fontSize(7).fillColor('#999').text(`… ${table.rows.length - 500} more rows (see CSV/Excel)`);
+        doc.fillColor('#000');
+      }
+    }
+
+    doc.end();
+  });
+}
+
+export type ReportFormat = 'json' | 'csv' | 'xlsx' | 'pdf';
+
+export const REPORT_CONTENT_TYPE: Record<Exclude<ReportFormat, 'json'>, string> = {
+  csv: 'text/csv; charset=utf-8',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pdf: 'application/pdf',
+};
+
+export async function renderReport(
+  report: Report<unknown>,
+  format: Exclude<ReportFormat, 'json'>,
+): Promise<Buffer | string> {
+  if (format === 'csv') return reportToCsv(report);
+  if (format === 'xlsx') return reportToXlsx(report);
+  return reportToPdf(report);
 }
 
 export async function buildReport(type: ReportType, from: Date, to: Date): Promise<Report<unknown>> {

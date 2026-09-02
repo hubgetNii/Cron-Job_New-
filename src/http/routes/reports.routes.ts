@@ -1,11 +1,15 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
-import { buildReport, reportToCsv } from '../../services/reporting/reports.service.js';
+import {
+  buildReport,
+  renderReport,
+  REPORT_CONTENT_TYPE,
+} from '../../services/reporting/reports.service.js';
 
 /**
  * Advanced report types (spec §15). SLA / compliance live in sla.routes.ts.
- * Every report is a period query with a JSON or CSV representation.
+ * Every report is a period query rendered as JSON, CSV, Excel or PDF.
  */
 export const reportsRouter: Router = Router();
 
@@ -22,16 +26,18 @@ const REPORT_TYPES = [
 
 const canRead = requireRole('OPERATOR', 'ADMIN', 'COMPLIANCE', 'MANAGEMENT', 'DEVELOPER');
 
+const EXT: Record<'csv' | 'xlsx' | 'pdf', string> = { csv: 'csv', xlsx: 'xlsx', pdf: 'pdf' };
+
 const q = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  format: z.enum(['json', 'csv']).optional(),
+  format: z.enum(['json', 'csv', 'xlsx', 'pdf']).optional(),
 });
 
 reportsRouter.get('/reports/catalog', canRead, (_req: Request, res: Response) => {
   res.json({
     data: REPORT_TYPES.map((t) => ({ type: t })),
-    note: 'GET /reports/{type}?from=&to=&format=json|csv',
+    note: 'GET /reports/{type}?from=&to=&format=json|csv|xlsx|pdf',
   });
 });
 
@@ -47,15 +53,16 @@ reportsRouter.get('/reports/:type', canRead, async (req: Request, res: Response)
 
   const report = await buildReport(type, fromDate, toDate);
 
-  if (format === 'csv') {
-    res.setHeader('content-type', 'text/csv; charset=utf-8');
+  if (format && format !== 'json') {
+    const body = await renderReport(report, format);
+    res.setHeader('content-type', REPORT_CONTENT_TYPE[format]);
     res.setHeader(
       'content-disposition',
       `attachment; filename="${type}-report-${fromDate.toISOString().slice(0, 10)}_${toDate
         .toISOString()
-        .slice(0, 10)}.csv"`,
+        .slice(0, 10)}.${EXT[format]}"`,
     );
-    res.send(reportToCsv(report));
+    res.send(body);
     return;
   }
   res.json({ data: report });

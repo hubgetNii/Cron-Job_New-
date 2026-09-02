@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { checkDbHealth, closePool, query } from '../../lib/db.js';
-import { buildReport, reportToCsv } from './reports.service.js';
+import { buildReport, reportTables, reportToCsv, reportToPdf, reportToXlsx } from './reports.service.js';
 
 const dbUp = (await checkDbHealth()).ok;
 
@@ -68,6 +68,27 @@ describe.skipIf(!dbUp)('advanced reports (Phase 18)', () => {
     const d = r.data as { headline: { status: string; platformAvailabilityPercent: number | null } };
     expect(typeof d.headline.status).toBe('string');
     expect(d.headline.platformAvailabilityPercent).toBeGreaterThan(90);
+  });
+
+  it('renders Excel and PDF for a multi-table report', async () => {
+    const now = Date.now();
+    for (let i = 0; i < 40; i += 1) {
+      const down = i % 8 === 0;
+      await seedCheck(new Date(now - i * 3_600_000), down ? 'DOWN' : 'UP', down ? null : 400, down ? 'HTTP_5XX' : undefined);
+    }
+    const report = await buildReport('system-health', from, to);
+
+    const tables = reportTables(report);
+    expect(tables.length).toBeGreaterThan(1);
+    expect(tables.map((t) => t.name)).toContain('Services');
+
+    const xlsx = await reportToXlsx(report);
+    expect(xlsx.subarray(0, 2).toString('latin1')).toBe('PK'); // zip / xlsx magic
+    expect(xlsx.length).toBeGreaterThan(500);
+
+    const pdf = await reportToPdf(report);
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(pdf.length).toBeGreaterThan(500);
   });
 
   it('every report type builds without error', async () => {

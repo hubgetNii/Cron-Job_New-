@@ -101,7 +101,7 @@ export function ReportsPage() {
   const [from, setFrom] = useState(isoDaysAgo(30));
   const [to, setTo] = useState(isoDaysAgo(0));
   const [result, setResult] = useState<unknown>(null);
-  const [busy, setBusy] = useState<'run' | 'csv' | null>(null);
+  const [busy, setBusy] = useState<'run' | 'csv' | 'xlsx' | 'pdf' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fromIso = new Date(`${from}T00:00:00Z`).toISOString();
@@ -121,12 +121,12 @@ export function ReportsPage() {
     }
   }
 
-  async function csv(): Promise<void> {
-    setBusy('csv');
+  async function download(format: 'csv' | 'xlsx' | 'pdf'): Promise<void> {
+    setBusy(format);
     try {
       await downloadWithAuth(
-        `/reports/${type}?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&format=csv`,
-        `${type}-report-${from}_${to}.csv`,
+        `/reports/${type}?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&format=${format}`,
+        `${type}-report-${from}_${to}.${format}`,
       );
     } finally {
       setBusy(null);
@@ -187,10 +187,17 @@ export function ReportsPage() {
             <Button disabled={busy != null} onClick={() => void run()}>
               {busy === 'run' ? 'Generating…' : `Generate ${active.label}`}
             </Button>
-            <Button variant="outline" disabled={busy != null} onClick={() => void csv()}>
-              <Download className="mr-1 size-4" />
-              {busy === 'csv' ? 'Preparing…' : 'Download CSV'}
-            </Button>
+            {(['csv', 'xlsx', 'pdf'] as const).map((f) => (
+              <Button
+                key={f}
+                variant="outline"
+                disabled={busy != null}
+                onClick={() => void download(f)}
+              >
+                <Download className="mr-1 size-4" />
+                {busy === f ? 'Preparing…' : f.toUpperCase()}
+              </Button>
+            ))}
           </div>
           {error && <p className="text-sm text-[var(--color-down)]">{error}</p>}
         </CardContent>
