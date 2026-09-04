@@ -49,6 +49,8 @@ export interface MonitoredApi {
   tags: string[];
   isActive: boolean;
   allowPrivateNetwork: boolean;
+  /** Audited per-target override of the Rule 16 money-moving frequency floor. */
+  bypassMinIntervalFloor: boolean;
 
   createdAt: Date;
   updatedAt: Date;
@@ -79,6 +81,7 @@ export interface CreateTargetInput {
   tags?: string[];
   isActive?: boolean;
   allowPrivateNetwork?: boolean;
+  bypassMinIntervalFloor?: boolean;
 }
 
 export type UpdateTargetInput = Partial<CreateTargetInput>;

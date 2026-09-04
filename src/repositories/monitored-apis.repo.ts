@@ -39,6 +39,7 @@ export interface TargetWriteModel {
   tags: string[];
   isActive: boolean;
   allowPrivateNetwork: boolean;
+  bypassMinIntervalFloor: boolean;
 }
 
 interface Row {
@@ -70,6 +71,7 @@ interface Row {
   tags: string[];
   is_active: boolean;
   allow_private_network: boolean;
+  bypass_min_interval_floor: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -80,7 +82,7 @@ const COLUMNS = `
   expected_status, expected_response, timeout_ms, frequency_cron,
   retry_count, retry_base_delay_ms, retry_backoff_multiplier, retry_max_delay_ms,
   sla_target_percent, owner_id, team_id, escalation_policy_id, tags, is_active,
-  allow_private_network, created_at, updated_at`;
+  allow_private_network, bypass_min_interval_floor, created_at, updated_at`;
 
 function toDomain(row: Row): MonitoredApi {
   return {
@@ -114,6 +116,7 @@ function toDomain(row: Row): MonitoredApi {
     tags: row.tags ?? [],
     isActive: row.is_active,
     allowPrivateNetwork: row.allow_private_network,
+    bypassMinIntervalFloor: row.bypass_min_interval_floor,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -148,6 +151,7 @@ function writeParams(m: TargetWriteModel): unknown[] {
     m.tags,
     m.isActive,
     m.allowPrivateNetwork,
+    m.bypassMinIntervalFloor,
   ];
 }
 
@@ -157,7 +161,7 @@ const WRITE_COLUMNS = `
   expected_status, expected_response, timeout_ms, frequency_cron,
   retry_count, retry_base_delay_ms, retry_backoff_multiplier, retry_max_delay_ms,
   sla_target_percent, owner_id, team_id, escalation_policy_id, tags, is_active,
-  allow_private_network`;
+  allow_private_network, bypass_min_interval_floor`;
 
 export async function createTarget(
   model: TargetWriteModel,

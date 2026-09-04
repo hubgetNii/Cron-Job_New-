@@ -68,6 +68,7 @@ export const createTargetSchema = z.object({
   tags: z.array(z.string().min(1).max(64)).max(50).optional(),
   isActive: z.boolean().optional(),
   allowPrivateNetwork: z.boolean().optional(),
+  bypassMinIntervalFloor: z.boolean().optional(),
 });
 
 export const updateTargetSchema = createTargetSchema.partial();

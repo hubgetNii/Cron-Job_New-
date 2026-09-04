@@ -29,6 +29,7 @@ export function makeMonitoredApi(overrides: Partial<MonitoredApi> = {}): Monitor
     tags: [],
     isActive: true,
     allowPrivateNetwork: true,
+    bypassMinIntervalFloor: false,
     createdAt: now,
     updatedAt: now,
     ...overrides,

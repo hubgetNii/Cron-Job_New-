@@ -88,20 +88,31 @@ function resolveCredentials(
   return { envelope: encryptCredentials(payloadCredentials) };
 }
 
-/** Validates the cron expression and enforces the money-moving frequency floor. */
-function assertScheduleAllowed(frequencyCron: string, isMoneyMoving: boolean): void {
+/**
+ * Validates the cron expression and enforces the money-moving frequency floor.
+ * `bypassFloor` is an explicit, audited per-target override (see migration
+ * `1725000021000_target-min-interval-override.sql`) for targets where a
+ * tighter cadence has a real recurring cost (e.g. a check that triggers an
+ * actual purchase) — cron syntax is still always validated.
+ */
+function assertScheduleAllowed(
+  frequencyCron: string,
+  isMoneyMoving: boolean,
+  bypassFloor: boolean,
+): void {
   try {
     assertValidCron(frequencyCron);
   } catch (err) {
     if (err instanceof InvalidCronError) throw new ValidationError(err.message);
     throw err;
   }
-  if (isMoneyMoving) {
+  if (isMoneyMoving && !bypassFloor) {
     const seconds = intervalSeconds(frequencyCron);
     if (seconds > MONEY_MOVING_MIN_INTERVAL_SECONDS) {
       throw new ValidationError(
         `Money-moving targets must be checked at least every ${MONEY_MOVING_MIN_INTERVAL_SECONDS}s ` +
-          `(spec Rule 16); "${frequencyCron}" runs every ${seconds}s.`,
+          `(spec Rule 16); "${frequencyCron}" runs every ${seconds}s. Set bypassMinIntervalFloor ` +
+          `to override (audited, still requires four-eyes approval for money-moving targets).`,
       );
     }
   }
@@ -147,6 +158,7 @@ function buildCreateModel(payload: CreateTargetPayload): TargetWriteModel {
     tags: payload.tags ?? [],
     isActive: payload.isActive ?? true,
     allowPrivateNetwork: payload.allowPrivateNetwork ?? false,
+    bypassMinIntervalFloor: payload.bypassMinIntervalFloor ?? false,
   };
 }
 
@@ -193,6 +205,7 @@ function mergeUpdateModel(
     tags: payload.tags ?? existing.tags,
     isActive: payload.isActive ?? existing.isActive,
     allowPrivateNetwork: payload.allowPrivateNetwork ?? existing.allowPrivateNetwork,
+    bypassMinIntervalFloor: payload.bypassMinIntervalFloor ?? existing.bypassMinIntervalFloor,
   };
 }
 
@@ -228,7 +241,7 @@ export async function createTarget(
   const payload = createTargetSchema.parse(input);
   const model = buildCreateModel(payload);
 
-  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
+  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving, model.bypassMinIntervalFloor);
   await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
 
   if (fourEyesRequired(model.isMoneyMoving)) {
@@ -317,7 +330,7 @@ export async function updateTarget(
   const existingEnvelope = await findTargetCredentialEnvelope(id);
   const model = mergeUpdateModel(existing, existingEnvelope, payload);
 
-  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving);
+  assertScheduleAllowed(model.frequencyCron, model.isMoneyMoving, model.bypassMinIntervalFloor);
   await assertUrlAllowedOrThrow(model.url, model.allowPrivateNetwork);
 
   // A change to a target that is money-moving now OR would become money-moving.

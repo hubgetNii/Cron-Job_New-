@@ -60,6 +60,27 @@ describe.skipIf(!dbUp)('target service (Phase 3)', () => {
     ).resolves.toBeDefined();
   });
 
+  it('lets bypassMinIntervalFloor override Rule 16 for a specific target', async () => {
+    const id = await makeTarget({
+      isMoneyMoving: true,
+      frequencyCron: '0 */3 * * *',
+      bypassMinIntervalFloor: true,
+    });
+    const target = await getTarget(id);
+    expect(target.frequencyCron).toBe('0 */3 * * *');
+    expect(target.bypassMinIntervalFloor).toBe(true);
+  });
+
+  it('still validates cron syntax when bypassMinIntervalFloor is set', async () => {
+    await expect(
+      makeTarget({
+        isMoneyMoving: true,
+        frequencyCron: 'not-a-cron',
+        bypassMinIntervalFloor: true,
+      }),
+    ).rejects.toThrow(/cron/i);
+  });
+
   it('blocks a private target URL unless overridden', async () => {
     await expect(
       makeTarget({ url: 'http://169.254.169.254/latest/meta-data', endpointClass: 'internal' }),

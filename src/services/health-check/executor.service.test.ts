@@ -138,4 +138,41 @@ describe('executeCheck', () => {
     expect(outcome.status).toBe('UNKNOWN');
     expect(outcome.errorMessage).toMatch(/SSRF/i);
   });
+
+  it('substitutes {{uuid}} in requestBody with a fresh id per check, reused across retries', async () => {
+    // A dedicated server that captures each request body (the shared `handler`
+    // above only sees the path), failing the first two attempts so a retry
+    // actually happens.
+    const bodies: string[] = [];
+    const captureServer = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+      req.on('end', () => {
+        bodies.push(raw);
+        const n = bodies.length;
+        res.writeHead(n < 3 ? 503 : 200, { 'content-type': 'application/json' });
+        res.end(n < 3 ? 'nope' : '{"ok":true}');
+      });
+    });
+    await new Promise<void>((resolve) => captureServer.listen(0, '127.0.0.1', resolve));
+    const addr = captureServer.address();
+    if (addr === null || typeof addr === 'string') throw new Error('no server address');
+    const captureUrl = `http://127.0.0.1:${addr.port}/`;
+
+    try {
+      const target = makeMonitoredApi({
+        url: captureUrl,
+        method: 'POST',
+        requestBody: { trackid: '{{uuid}}', amount: 1 },
+      });
+      await executeCheck(target, { credentials: null, sleep: noSleep });
+
+      expect(bodies).toHaveLength(3);
+      const trackIds = bodies.map((b) => (JSON.parse(b) as { trackid: string }).trackid);
+      expect(new Set(trackIds).size).toBe(1);
+      expect(trackIds[0]).toMatch(/^[0-9a-f-]{36}$/);
+    } finally {
+      await new Promise<void>((resolve) => captureServer.close(() => resolve()));
+    }
+  });
 });

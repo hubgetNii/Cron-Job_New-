@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { request } from 'undici';
 import { componentLogger } from '../../lib/logger.js';
 import { assertUrlAllowed, SsrfBlockedError } from '../../lib/ssrf.js';
 import { responseSample } from '../../lib/pci.js';
 import { maskBody, maskHeaders, maskUrl } from '../../lib/masking.js';
+import { substituteUuid } from '../../lib/templating.js';
 import { findTargetCredentialEnvelope } from '../../repositories/monitored-apis.repo.js';
 import { decryptCredentials } from '../../lib/crypto/credential-cipher.js';
 import type { MonitoredApi } from '../../domain/target.js';
@@ -121,8 +123,9 @@ async function preflightSsrf(target: MonitoredApi): Promise<CheckFailureType | n
 async function attempt(
   target: MonitoredApi,
   creds: Record<string, string> | null,
+  runId: string,
 ): Promise<AttemptResult> {
-  const auth = buildAuthMaterial(target.authenticationType, creds);
+  const auth = await buildAuthMaterial(target.authenticationType, creds);
   const url = buildUrl(target.url, auth.query);
   const headers: Record<string, string> = {
     accept: 'application/json, text/plain;q=0.9, */*;q=0.5',
@@ -133,10 +136,8 @@ async function attempt(
 
   let body: string | null = null;
   if (target.method !== 'GET' && target.method !== 'HEAD' && target.requestBody != null) {
-    body =
-      typeof target.requestBody === 'string'
-        ? target.requestBody
-        : JSON.stringify(target.requestBody);
+    const templated = substituteUuid(target.requestBody, runId);
+    body = typeof templated === 'string' ? templated : JSON.stringify(templated);
     headers['content-type'] ??= 'application/json';
   }
   const sent: SentRequest = { method: target.method, url, headers, body };
@@ -265,13 +266,17 @@ export async function executeCheck(
   const creds = await resolveCredentials(target, opts);
   const sleep = opts.sleep ?? defaultSleep;
   const maxAttempts = target.retry.count + 1;
+  // Generated once per check, not per attempt: a retry must reuse the same id
+  // so a vendor's own idempotency/dedup on that field can't be defeated by a
+  // retry, which matters most for a check that triggers a real purchase.
+  const runId = randomUUID();
 
   let last: AttemptResult | undefined;
   let attempts = 0;
 
   for (let n = 1; n <= maxAttempts; n += 1) {
     attempts = n;
-    last = await attempt(target, creds);
+    last = await attempt(target, creds, runId);
 
     const failed = last.status === 'DOWN' || last.status === 'UNKNOWN';
     const retryable = last.failureType !== null && RETRYABLE_FAILURES.has(last.failureType);

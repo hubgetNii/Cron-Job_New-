@@ -46,5 +46,8 @@ export async function rowsToXlsx(sheets: XlsxSheet[]): Promise<Buffer> {
     }
   }
 
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  // exceljs' writeBuffer() is typed loosely (ExcelJS.Buffer); normalise to a
+  // Node Buffer backed by a plain ArrayBuffer so callers get a stable type.
+  const written: unknown = await wb.xlsx.writeBuffer();
+  return Buffer.from(written as ArrayBuffer);
 }

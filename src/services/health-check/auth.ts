@@ -1,4 +1,5 @@
 import type { AuthType } from '../../domain/enums.js';
+import { getOAuth2Token, type OAuth2Credentials } from './oauth2-token-cache.js';
 
 /**
  * Builds the auth headers (and query params, for schemes that use them) for an
@@ -10,6 +11,9 @@ import type { AuthType } from '../../domain/enums.js';
  *   BEARER         -> { token }
  *   BASIC          -> { username, password }
  *   CUSTOM_HEADER  -> { name, value }
+ *   OAUTH2         -> { tokenUrl, tokenUsername, tokenPassword, tokenPath?, tokenExpiryPath?, tokenBody? }
+ *                     Basic-auth token handshake, cached until near expiry —
+ *                     see `oauth2-token-cache.ts`.
  *   iSmartPay merchant integration uses API_KEY-style { apiId, apiSecret }.
  */
 export interface AuthMaterial {
@@ -19,11 +23,17 @@ export interface AuthMaterial {
 
 const EMPTY: AuthMaterial = { headers: {}, query: {} };
 
-export function buildAuthMaterial(
+export async function buildAuthMaterial(
   type: AuthType,
   creds: Record<string, string> | null,
-): AuthMaterial {
-  if (type === 'NONE' || type === 'OAUTH2' || !creds) return { headers: {}, query: {} };
+): Promise<AuthMaterial> {
+  if (type === 'NONE' || !creds) return EMPTY;
+
+  if (type === 'OAUTH2') {
+    if (!creds['tokenUrl'] || !creds['tokenUsername'] || !creds['tokenPassword']) return EMPTY;
+    const token = await getOAuth2Token(creds as unknown as OAuth2Credentials);
+    return { headers: { Authorization: `Bearer ${token}` }, query: {} };
+  }
 
   switch (type) {
     case 'API_KEY': {
