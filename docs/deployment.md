@@ -108,16 +108,39 @@ server reboot brings the whole stack back. Nothing depends on your machine.
 
 ## Part 2 — the dashboard on Vercel
 
+> **"For now" without a backend server.** Vercel can only host the dashboard
+> (the static SPA) — it cannot run the scheduler / watchdog (persistent 1 s tick
+> loop) or Postgres / Redis. If you have no backend host yet, keep the backend
+> running on your machine (`scripts/local-up.sh`) and expose its API through a
+> tunnel so the Vercel-hosted dashboard can reach it:
+>
+> ```bash
+> # one-time
+> brew install cloudflared          # or: npm i -g localtunnel / use ngrok
+>
+> # each session — prints a public https URL for your local API
+> cloudflared tunnel --url http://localhost:3000
+> ```
+>
+> Use that `https://….trycloudflare.com` URL as the API base below. The URL
+> changes every time you restart the tunnel (set up a *named* Cloudflare tunnel
+> with your own domain for a stable one). **The dashboard only works while your
+> machine + tunnel are up** — that is the trade-off until the backend has a real
+> home (Part 1). Also: a publicly reachable API means the bootstrap admin
+> password must be strong — rotate it (`npm run create-admin`) before tunnelling.
+
 1. **vercel.com → Add New → Project → Import** `hubgetNii/Cron-Job_New-`.
 2. **Root Directory:** `fintech-cron-monitor/web` (click *Edit* next to Root Directory).
    Vercel picks up `web/vercel.json` (framework Vite, SPA rewrite).
 3. **Environment Variables:**
    | name | value |
    |---|---|
-   | `VITE_API_URL` | `https://cron-api.ismartghana.com/api/v1` |
+   | `VITE_API_URL` | `https://<your-api-host>/api/v1` — the server domain (Part 1) or the `…trycloudflare.com` tunnel URL |
 4. **Deploy.** You get `https://<project>.vercel.app`.
-5. Back on the server, make sure that exact origin is in `CORS_ALLOWED_ORIGINS`
-   in `.env`, then `docker compose -f docker-compose.prod.yml up -d api` to reload it.
+5. Put that exact origin in `CORS_ALLOWED_ORIGINS` and restart the API:
+   - **server:** edit `.env`, `docker compose -f docker-compose.prod.yml up -d api`
+   - **laptop:** edit `.env`, `scripts/local-down.sh && scripts/local-up.sh`
+   - (or just `CORS_ALLOWED_ORIGINS=*` while you're testing)
 6. Open the dashboard, log in with the bootstrap admin. The public status page is
    at `/status`.
 
