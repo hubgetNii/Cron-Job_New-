@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
-import { loginRateLimit } from '../middleware/rate-limit.js';
+import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.js';
 import {
   getMe,
   login,
@@ -26,7 +26,7 @@ authRouter.post('/auth/login', loginRateLimit(), async (req: Request, res: Respo
   res.json({ data: result });
 });
 
-authRouter.post('/auth/refresh', async (req: Request, res: Response) => {
+authRouter.post('/auth/refresh', refreshRateLimit(), async (req: Request, res: Response) => {
   const { refreshToken } = refreshBody.parse(req.body);
   const result = await refresh(refreshToken, meta(req));
   res.json({ data: result });

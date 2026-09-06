@@ -36,11 +36,17 @@ const contactBody = z.object({
   note: z.string().max(1000).nullish(),
 });
 
-notificationContactsRouter.get('/notification-contacts', async (req: Request, res: Response) => {
-  const includeInactive = req.query.includeInactive !== 'false';
-  const contacts = await listContacts(includeInactive);
-  res.json({ data: contacts, count: contacts.length });
-});
+// The contact list is PII (phone numbers, email addresses) — not for every
+// authenticated principal.
+notificationContactsRouter.get(
+  '/notification-contacts',
+  requireRole('ADMIN', 'OPERATOR', 'COMPLIANCE'),
+  async (req: Request, res: Response) => {
+    const includeInactive = req.query.includeInactive !== 'false';
+    const contacts = await listContacts(includeInactive);
+    res.json({ data: contacts, count: contacts.length });
+  },
+);
 
 notificationContactsRouter.post(
   '/notification-contacts',

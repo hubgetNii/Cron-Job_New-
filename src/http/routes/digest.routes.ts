@@ -34,9 +34,14 @@ digestRouter.get('/health-digests/preview', async (_req: Request, res: Response)
 });
 
 // Preview the routine status SMS text + who it would go to — no send.
-digestRouter.get('/health-digests/sms-preview', async (_req: Request, res: Response) => {
-  res.json({ data: await previewStatusSms() });
-});
+// Exposes recipient phone numbers, so it's operator-and-up only.
+digestRouter.get(
+  '/health-digests/sms-preview',
+  requireRole('ADMIN', 'OPERATOR'),
+  async (_req: Request, res: Response) => {
+    res.json({ data: await previewStatusSms() });
+  },
+);
 
 // Send the routine platform-status SMS now, to every SMS contact.
 digestRouter.post(
