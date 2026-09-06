@@ -13,6 +13,8 @@
     "dev:worker": "tsx watch src/workers/main.ts",
     "dev:watchdog": "tsx watch src/watchdog/main.ts",
     "create-admin": "tsx src/scripts/create-admin.ts",
+    "reseal-credentials": "tsx src/scripts/reseal-credentials.ts",
+    "rotate-admin": "tsx src/scripts/rotate-admin.ts",
     "seed:mpsms": "tsx src/scripts/seed-mpsms.ts",
     "seed:mpsms-check": "tsx src/scripts/seed-mpsms-check.ts",
     "seed:topup-bundle": "tsx src/scripts/seed-topup-bundle.ts",

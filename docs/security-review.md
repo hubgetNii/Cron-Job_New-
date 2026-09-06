@@ -13,7 +13,12 @@ Vercel-hosted dashboard can reach it. That changes the threat model from
 
 ## Must fix before public exposure
 
-### 1. JWT signing secret is a published placeholder — HIGH
+> **Status 2026-09-06:** #1 and #2 **done** on the local instance (new
+> `JWT_SECRET`, new `CREDENTIAL_ENCRYPTION_KEY` + all 4 target credentials
+> resealed and verified checking UP). #3 needs an email + password capture —
+> run `npm run rotate-admin -- <your-email>`. #4 and #5 are deploy-time.
+
+### 1. JWT signing secret is a published placeholder — HIGH ✅ done
 `.env` has `JWT_SECRET=local-dev-jwt-secret-change-me-please`. That exact string
 was published in this repo's git history (10 occurrences in old commits/docs).
 **Anyone who reads the repo can forge valid access tokens for any role,
@@ -22,7 +27,7 @@ including ADMIN** — the entire auth layer is bypassed.
 **Fix:** `openssl rand -hex 48` → set `JWT_SECRET`, restart the API. All existing
 sessions are invalidated (expected). Do this *before* the tunnel is up.
 
-### 2. Credential encryption key falls back to a public hard-coded key — HIGH
+### 2. Credential encryption key falls back to a public hard-coded key — HIGH ✅ done
 `CREDENTIAL_ENCRYPTION_KEY` is unset, so `credential-cipher.ts` uses
 `DEV_KEY = sha256("fintech-cron-monitor:dev-kek")` — a constant in the
 open-source tree. Every monitored target's stored credentials (MPSMS
@@ -30,17 +35,10 @@ accesscode/clientcode, any future API keys) are "encrypted at rest" with a key
 anyone can compute. The DB is not reachable through the tunnel, but the
 at-rest protection is void.
 
-**Fix:**
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-Set `CREDENTIAL_ENCRYPTION_KEY` to that. **This breaks decryption of already-
-sealed credentials** (the `keyId` check rejects them) — the MPSMS targets must be
-re-seeded:
-```bash
-# delete the credentialed targets, then:
-npm run seed:mpsms && npm run seed:mpsms-check
-```
+**Fix:** `npm run reseal-credentials` generates a fresh key, re-encrypts every
+stored target credential under it (decrypting each with whatever key still opens
+it), and prints the key to add to `.env`. Restart the API + scheduler after.
+No target delete / re-seed needed.
 
 ### 3. Bootstrap admin password published + a trivially weak user — MEDIUM
 - `BOOTSTRAP_ADMIN_PASSWORD=cronmon-admin-2026` appears 25× in git history.
@@ -48,9 +46,9 @@ npm run seed:mpsms && npm run seed:mpsms-check
   is a dictionary word — cracked in the first handful of guesses even against
   the login limiter.
 
-**Fix:** `npm run create-admin` with a strong password; `DELETE FROM users WHERE
-email = 'admin@admin.local'`; rotate `BOOTSTRAP_ADMIN_PASSWORD` or unset it
-(the bootstrap only runs when the users table is empty).
+**Fix:** `npm run rotate-admin -- <your-email>` — provisions a fresh ADMIN with
+a 24-char generated password (printed once) and deletes both test accounts.
+`BOOTSTRAP_ADMIN_PASSWORD` has already been cleared in `.env`.
 
 ### 4. Run the exposed instance as `NODE_ENV=production` — MEDIUM
 `NODE_ENV=development` keeps the insecure-KEK fallback (see #2), pretty-print
