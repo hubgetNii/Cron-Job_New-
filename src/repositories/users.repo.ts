@@ -1,4 +1,4 @@
-import { query, withTransaction } from '../lib/db.js';
+import { query, sql, withTransaction, type SqlRunner } from '../lib/db.js';
 import type { RbacRole, UserStatus } from '../domain/enums.js';
 
 export interface User {
@@ -48,8 +48,8 @@ export async function findUserByEmail(
   return rows[0] ? { ...toUser(rows[0]), passwordHash: rows[0].password_hash } : null;
 }
 
-export async function findUserById(id: string): Promise<User | null> {
-  const { rows } = await query<UserRow>(`${SELECT} WHERE u.id = $1 GROUP BY u.id`, [id]);
+export async function findUserById(id: string, runner: SqlRunner = sql): Promise<User | null> {
+  const { rows } = await runner.query<UserRow>(`${SELECT} WHERE u.id = $1 GROUP BY u.id`, [id]);
   return rows[0] ? toUser(rows[0]) : null;
 }
 
@@ -79,7 +79,7 @@ export async function createUser(input: {
         [id, roleKey],
       );
     }
-    const user = await findUserById(id);
+    const user = await findUserById(id, client);
     return user!;
   });
 }

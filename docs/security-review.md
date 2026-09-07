@@ -13,10 +13,11 @@ Vercel-hosted dashboard can reach it. That changes the threat model from
 
 ## Must fix before public exposure
 
-> **Status 2026-09-06:** #1 and #2 **done** on the local instance (new
-> `JWT_SECRET`, new `CREDENTIAL_ENCRYPTION_KEY` + all 4 target credentials
-> resealed and verified checking UP). #3 needs an email + password capture —
-> run `npm run rotate-admin -- <your-email>`. #4 and #5 are deploy-time.
+> **Status 2026-09-07:** #1, #2, #3 **done** on the local instance — new
+> `JWT_SECRET`; new `CREDENTIAL_ENCRYPTION_KEY` + all 4 target credentials
+> resealed and verified checking UP; `niiaayitey@gmail.com` is the sole active
+> ADMIN, `admin@admin.local` + `admin@ismartpay.local` disabled (login returns
+> 401), all their sessions revoked. #4 and #5 are deploy-time.
 
 ### 1. JWT signing secret is a published placeholder — HIGH ✅ done
 `.env` has `JWT_SECRET=local-dev-jwt-secret-change-me-please`. That exact string
@@ -40,15 +41,17 @@ stored target credential under it (decrypting each with whatever key still opens
 it), and prints the key to add to `.env`. Restart the API + scheduler after.
 No target delete / re-seed needed.
 
-### 3. Bootstrap admin password published + a trivially weak user — MEDIUM
+### 3. Bootstrap admin password published + a trivially weak user — MEDIUM ✅ done
 - `BOOTSTRAP_ADMIN_PASSWORD=cronmon-admin-2026` appears 25× in git history.
 - A user `admin@admin.local` / `pass` exists (created for local testing). `pass`
   is a dictionary word — cracked in the first handful of guesses even against
   the login limiter.
 
-**Fix:** `npm run rotate-admin -- <your-email>` — provisions a fresh ADMIN with
-a 24-char generated password (printed once) and deletes both test accounts.
-`BOOTSTRAP_ADMIN_PASSWORD` has already been cleared in `.env`.
+**Fix:** `npm run rotate-admin -- <your-email>` — ensures `<email>` is an ADMIN
+with a fresh 24-char generated password (printed once), **disables** the two
+test accounts (not deleted — they're referenced by config-change-request
+history) and revokes every session it touches. `BOOTSTRAP_ADMIN_PASSWORD` is
+already cleared in `.env`.
 
 ### 4. Run the exposed instance as `NODE_ENV=production` — MEDIUM
 `NODE_ENV=development` keeps the insecure-KEK fallback (see #2), pretty-print
