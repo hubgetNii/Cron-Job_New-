@@ -13,6 +13,16 @@ ROOT="$(pwd)"
 RUN="$ROOT/.run"
 mkdir -p "$RUN"
 
+# ── kill-switch ─────────────────────────────────────────────────────────────
+# If .run/DISABLED exists, this script starts nothing (and the supervisor /
+# launchd / cron-monitor.command all honour it too).
+#   disable:  touch .run/DISABLED
+#   re-enable: rm .run/DISABLED
+if [ -e "$RUN/DISABLED" ]; then
+  echo "[$(date '+%F %T')] local-up: DISABLED ($RUN/DISABLED present) — starting nothing. rm it to re-enable."
+  exit 0
+fi
+
 running() { pgrep -f "$1" >/dev/null 2>&1; }
 
 start() {   # start <name> <match-pattern> <command...>

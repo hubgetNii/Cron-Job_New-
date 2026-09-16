@@ -11,6 +11,14 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR/.."
 
+# kill-switch — see .run/DISABLED
+if [ -e ".run/DISABLED" ]; then
+  echo "cron-monitor is DISABLED — .run/DISABLED is present, nothing will be started."
+  echo "Re-enable with:  rm '$PWD/.run/DISABLED'"
+  sleep 3
+  exit 0
+fi
+
 if pgrep -f "$DIR/local-supervisor.sh" >/dev/null 2>&1 \
    || pgrep -f 'caffeinate -s bash -c' >/dev/null 2>&1; then
   echo "cron-monitor supervisor already running."
