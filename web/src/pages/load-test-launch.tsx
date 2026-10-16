@@ -14,6 +14,7 @@ import {
   useRunMetrics,
   useRuns,
   useSuiteRuns,
+  type AuthInfo,
   type LoadRunInfo,
   type MetricPoint,
   type PackInfo,
@@ -630,6 +631,103 @@ function SchedulesCard({
   );
 }
 
+function AuthorizationsCard({ isAdmin }: { isAdmin: boolean }) {
+  const qc = useQueryClient();
+  const me = authStore.user();
+  const { data = [] } = useQuery({
+    queryKey: ['lt-auths'],
+    queryFn: runApi.authorizations,
+    refetchInterval: 15_000,
+  });
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const review = useMutation({
+    mutationFn: (v: { id: string; decision: 'approve' | 'reject' }) =>
+      runApi.reviewAuth(v.id, v.decision, notes[v.id] ?? ''),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['lt-auths'] }),
+  });
+  const color: Record<AuthInfo['status'], string> = {
+    PENDING: 'var(--color-degraded)',
+    APPROVED: 'var(--color-up)',
+    REJECTED: 'var(--color-down)',
+    REVOKED: 'var(--color-down)',
+    EXPIRED: 'var(--color-unknown)',
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Test authorizations</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Nothing runs against a real environment without an approved authorization. It is proposed
+          by one person and approved by a different ADMIN — the person who proposed it cannot
+          approve it.
+        </p>
+        {data.map((a) => (
+          <div
+            key={a.id}
+            className="space-y-1 rounded-md border border-[var(--color-border)] p-3 text-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{a.reference}</span>
+              <Badge
+                style={{
+                  color: color[a.status],
+                  borderColor: `color-mix(in oklab, ${color[a.status]} 45%, transparent)`,
+                }}
+              >
+                {a.status.toLowerCase()}
+              </Badge>
+            </div>
+            <p className="text-[var(--color-text-muted)]">{a.scope}</p>
+            <p className="text-xs text-[var(--color-text-faint)]">
+              {new Date(a.windowStart).toLocaleString()} → {new Date(a.windowEnd).toLocaleString()}{' '}
+              · up to {a.maxRps} req/s, {a.maxVus} users, {Math.round(a.maxDurationSeconds / 60)}{' '}
+              min{a.allowRealSideEffects ? ' · REAL side effects allowed' : ''}
+            </p>
+            {a.status === 'PENDING' && isAdmin && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <input
+                  className="h-9 min-w-56 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-2 text-sm"
+                  placeholder="Note (optional)"
+                  value={notes[a.id] ?? ''}
+                  onChange={(e) => setNotes((n) => ({ ...n, [a.id]: e.target.value }))}
+                />
+                <Button
+                  size="sm"
+                  disabled={review.isPending}
+                  onClick={() => review.mutate({ id: a.id, decision: 'approve' })}
+                >
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={review.isPending}
+                  onClick={() => review.mutate({ id: a.id, decision: 'reject' })}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+        {data.length === 0 && (
+          <p className="text-sm text-[var(--color-text-faint)]">No authorizations yet.</p>
+        )}
+        {review.error && (
+          <p className="text-sm text-[var(--color-down)]">{errText(review.error)}</p>
+        )}
+        {me && !isAdmin && (
+          <p className="text-xs text-[var(--color-text-faint)]">
+            Only an ADMIN can approve or reject.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function WebhookCard({ canRun }: { canRun: boolean }) {
   const qc = useQueryClient();
   const { data: sinks = [] } = useQuery({
@@ -1053,6 +1151,7 @@ export function LoadTestLaunchPage() {
           )}
         </CardContent>
       </Card>
+      <AuthorizationsCard isAdmin={roles.includes('ADMIN')} />
       <WebhookCard canRun={canRun} />
       <SchedulesCard targets={targets} canRun={canRun} />
       <Card>

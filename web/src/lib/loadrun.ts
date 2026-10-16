@@ -162,6 +162,23 @@ export interface DeliveryInfo {
   receivedAt: string;
 }
 
+export interface AuthInfo {
+  id: string;
+  apiId: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED' | 'EXPIRED';
+  reference: string;
+  scope: string;
+  windowStart: string;
+  windowEnd: string;
+  maxRps: number;
+  maxVus: number;
+  maxDurationSeconds: number;
+  allowRealSideEffects: boolean;
+  proposedBy: string;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+}
+
 export const isLive = (s: RunStatus): boolean =>
   s === 'QUEUED' || s === 'PREFLIGHT' || s === 'RUNNING';
 
@@ -205,6 +222,9 @@ export const runApi = {
       (r) => r.data,
     ),
   deleteSink: (id: string) => req<unknown>(`/load-tests/webhook-sinks/${id}`, { method: 'DELETE' }),
+  authorizations: () => req<Wrapped<AuthInfo[]>>('/load-tests/authorizations').then((r) => r.data),
+  reviewAuth: (id: string, decision: 'approve' | 'reject', note: string) =>
+    post<AuthInfo>(`/load-tests/authorizations/${id}/${decision}`, { note }),
   schedules: () => req<Wrapped<ScheduleInfo[]>>('/load-tests/schedules').then((r) => r.data),
   saveSchedule: (apiId: string, suite: ScheduleInfo['suite'], cron: string) =>
     post<ScheduleInfo>('/load-tests/schedules', { apiId, suite, cron }),
