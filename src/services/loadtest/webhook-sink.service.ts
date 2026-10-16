@@ -117,6 +117,8 @@ export async function receiveHook(h: IncomingHook): Promise<number> {
     eventId,
     eventType: typeof envelope?.type === 'string' ? envelope.type : null,
     reference,
+    envelopeId: typeof envelope?.id === 'string' ? envelope.id : null,
+    eventStatus: typeof data?.['status'] === 'string' ? data['status'] : null,
     attempt: (await repo.priorAttempts(sink.id, eventId)) + 1,
     signatureOk: ok,
     reason,

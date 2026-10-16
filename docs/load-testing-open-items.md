@@ -17,7 +17,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
-| B9 | Wire the **live correctness webhook check** to the new receiver (it still uses an in-process listener) | C | Receiver built and tested; deployment is A4. |
 | B13 | **Compliance follow-ups**: optional pack signing with a managed key (hash is recorded today, not signed), second-person pack approval | C | Scheduled evidence refresh is done (D11). |
 
 ## C. Housekeeping / known issues
@@ -55,3 +54,4 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D17 | **k6 + Node hybrid engine** confirmed (was A8) and the current production policy accepted (was A9: read-only ≤2 rps, 5 min, authorization required; money-moving production load refused) | 2026-10-16 |
 | D18 | **Pushed to GitHub** (was A10): `84486be..202c722`, 13 commits. Later work is local until pushed again | 2026-10-16 |
 | D19 | **Webhook receiver** (the build half of B9): public `POST /hooks/loadtest/<slug>` verifying the documented signature over the raw body, answering 401/503/404 correctly, recording every delivery with retry counts and masked bodies; dashboard card to create it, store the secret, and watch deliveries | 2026-10-16 |
+| D20 | **Live webhook check** (was B9): new check `webhook.live-delivery` makes a real sandbox collection, waits for the webhook to reach the receiver, and verifies signature, envelope-id = header id, collection event type, our 200 acknowledgement, and that the best webhook status equals the API state. Skips (never fails) with an instruction when no receiver/secret exists or nothing arrives in 90 s. Mapped to the third-party-API and webhook controls. Tested end-to-end against the real receiver. Still needs A4 (public address) to run for real | 2026-10-16 |

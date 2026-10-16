@@ -420,6 +420,7 @@ export const CONTROLS: Control[] = [
         'Webhooks are authenticated, de-duplicated and order-safe',
         'webhook.signature-duplicates-order',
       ),
+      checks('The real sandbox delivers authentic webhooks', 'webhook.live-delivery'),
       checks('Webhook retries keep the same id', 'webhook.retry-keeps-id'),
     ],
     limitation:
@@ -548,6 +549,7 @@ export const CONTROLS: Control[] = [
     evidence: [
       checks('Vendor responses match the documented contract', 'consumption.schema-conformance'),
       checks('Webhook authenticity and ordering', 'webhook.signature-duplicates-order'),
+      checks('The real sandbox delivers authentic webhooks', 'webhook.live-delivery'),
       checks('Vendor timeouts are retried safely', 'sim.ambiguous-timeout-retry'),
     ],
     limitation: 'Does not assess the vendor’s own controls.',

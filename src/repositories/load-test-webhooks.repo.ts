@@ -20,6 +20,8 @@ export interface Delivery {
   eventId: string;
   eventType: string | null;
   reference: string | null;
+  envelopeId: string | null;
+  eventStatus: string | null;
   attempt: number;
   signatureOk: boolean;
   reason: string | null;
@@ -119,6 +121,8 @@ export async function insertDelivery(d: {
   eventId: string;
   eventType: string | null;
   reference: string | null;
+  envelopeId: string | null;
+  eventStatus: string | null;
   attempt: number;
   signatureOk: boolean;
   reason: string | null;
@@ -128,13 +132,15 @@ export async function insertDelivery(d: {
 }): Promise<void> {
   await query(
     `INSERT INTO load_test_webhook_deliveries
-       (sink_id, event_id, event_type, reference, attempt, signature_ok, reason, body_sha256, body_masked, responded_with)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+       (sink_id, event_id, event_type, reference, envelope_id, event_status, attempt, signature_ok, reason, body_sha256, body_masked, responded_with)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       d.sinkId,
       d.eventId,
       d.eventType,
       d.reference,
+      d.envelopeId,
+      d.eventStatus,
       d.attempt,
       d.signatureOk,
       d.reason,
@@ -145,22 +151,48 @@ export async function insertDelivery(d: {
   );
 }
 
+const toDelivery = (r: Row): Delivery => ({
+  id: Number(r['id']),
+  sinkId: r['sink_id'] as string,
+  eventId: r['event_id'] as string,
+  eventType: (r['event_type'] as string | null) ?? null,
+  reference: (r['reference'] as string | null) ?? null,
+  envelopeId: (r['envelope_id'] as string | null) ?? null,
+  eventStatus: (r['event_status'] as string | null) ?? null,
+  attempt: r['attempt'] as number,
+  signatureOk: r['signature_ok'] as boolean,
+  reason: (r['reason'] as string | null) ?? null,
+  bodyMasked: (r['body_masked'] as string | null) ?? null,
+  respondedWith: r['responded_with'] as number,
+  receivedAt: (r['received_at'] as Date).toISOString(),
+});
+
 export async function listDeliveries(sinkId: string, limit: number): Promise<Delivery[]> {
   const { rows } = await query<Row>(
     `SELECT * FROM load_test_webhook_deliveries WHERE sink_id = $1 ORDER BY id DESC LIMIT $2`,
     [sinkId, limit],
   );
-  return rows.map((r) => ({
-    id: Number(r['id']),
-    sinkId: r['sink_id'] as string,
-    eventId: r['event_id'] as string,
-    eventType: (r['event_type'] as string | null) ?? null,
-    reference: (r['reference'] as string | null) ?? null,
-    attempt: r['attempt'] as number,
-    signatureOk: r['signature_ok'] as boolean,
-    reason: (r['reason'] as string | null) ?? null,
-    bodyMasked: (r['body_masked'] as string | null) ?? null,
-    respondedWith: r['responded_with'] as number,
-    receivedAt: (r['received_at'] as Date).toISOString(),
-  }));
+  return rows.map(toDelivery);
+}
+
+/** The receiver a live run should look at: this target's own, else a general one; it must be able to verify. */
+export async function findUsableSink(apiId: string): Promise<{ id: string; label: string } | null> {
+  const { rows } = await query<Row>(
+    `SELECT id, label FROM load_test_webhook_sinks
+      WHERE enabled AND encrypted_secret IS NOT NULL AND (api_id = $1 OR api_id IS NULL)
+      ORDER BY (api_id = $1) DESC NULLS LAST, created_at DESC LIMIT 1`,
+    [apiId],
+  );
+  return rows[0] ? { id: rows[0]['id'] as string, label: rows[0]['label'] as string } : null;
+}
+
+export async function deliveriesForReference(
+  sinkId: string,
+  reference: string,
+): Promise<Delivery[]> {
+  const { rows } = await query<Row>(
+    `SELECT * FROM load_test_webhook_deliveries WHERE sink_id = $1 AND reference = $2 ORDER BY id`,
+    [sinkId, reference],
+  );
+  return rows.map(toDelivery);
 }

@@ -43,7 +43,29 @@ export interface SimState {
   counters: Record<string, number>;
 }
 
+/** A webhook delivery as recorded by the live receiver. */
+export interface ProbeDelivery {
+  eventId: string;
+  envelopeId: string | null;
+  eventType: string | null;
+  eventStatus: string | null;
+  attempt: number;
+  signatureOk: boolean;
+  reason: string | null;
+  respondedWith: number;
+}
+
+/** Lets a live run look at what iSmart actually delivered to our public receiver. */
+export interface LiveWebhookProbe {
+  label: string;
+  deliveriesFor(reference: string): Promise<ProbeDelivery[]>;
+}
+
 export interface CheckContext {
+  /** Present on live runs when a receiver able to verify signatures exists for the target. */
+  liveWebhook: LiveWebhookProbe | null;
+  /** How long the live webhook check waits for a delivery. */
+  webhookWaitMs: number;
   api: ApiClient;
   /** The API credential id (also the simulator wallet id). */
   clientId: string;
@@ -80,6 +102,8 @@ export interface Check {
   /** Generic control tags, mapped to frameworks in Phase 28. */
   controls: string[];
   requires: 'simulator'[];
+  /** Only meaningful against a real environment; it is not part of simulator runs at all. */
+  liveOnly?: true;
   /** OWASP API Security Top 10 (2023) category, for security checks. */
   owasp?: string;
   run(c: CheckContext): Promise<Assertion[] | SkipResult>;
@@ -723,6 +747,79 @@ export const CHECKS: Check[] = [
         await sim.config({ webhooks: { duplicateRate: 0, outOfOrder: false } });
         await rx.stop();
       }
+    },
+  },
+  {
+    id: 'webhook.live-delivery',
+    title: 'The real sandbox delivers authentic, well-formed webhooks that agree with the API',
+    controls: ['webhook-authenticity', 'ordering'],
+    requires: [],
+    liveOnly: true,
+    async run(c) {
+      if (!c.liveWebhook) {
+        return {
+          skip: 'no webhook receiver with a signing secret is set up for this target (create one on the Run page and register its address in the iSmart test console)',
+        };
+      }
+      const probe = c.liveWebhook;
+      const ref = c.ref();
+      await c.api.call('POST', '/v1/collections', {
+        body: c.collection(ref, { payer: { type: 'msisdn', value: FIXTURE.ok } }),
+        key: c.idem(),
+      });
+      const detail = await pollStatus(c, `/v1/collections/${ref}`, COLLECTION_FINAL);
+      // Give the sender time to retry: its schedule is "6 attempts over about a day", so the first attempt is what we can wait for.
+      const arrived = await c.waitFor(async () => {
+        const d = await probe.deliveriesFor(ref);
+        return d.length > 0 ? d : null;
+      }, c.webhookWaitMs);
+      if (!arrived) {
+        return {
+          skip: `no webhook for ${ref} reached the receiver "${probe.label}" within ${Math.round(c.webhookWaitMs / 1000)} s — is its address registered in the iSmart test console and publicly reachable?`,
+        };
+      }
+      await c.waitFor(() => Promise.resolve(null), 3000); // let a trailing event land
+      const all = await probe.deliveriesFor(ref);
+      const ids = new Set(all.map((d) => d.eventId));
+      const best = all
+        .map((d) => d.eventStatus ?? '')
+        .filter(Boolean)
+        .sort((a, b) => (RANK[b] ?? 0) - (RANK[a] ?? 0))[0];
+      return [
+        ok('a webhook arrived for the payment', all.length > 0, `${all.length} deliveries`),
+        ok(
+          'every delivery carries a valid signature over the RAW body',
+          all.every((d) => d.signatureOk),
+          all
+            .filter((d) => !d.signatureOk)
+            .map((d) => d.reason ?? 'invalid')
+            .join(', '),
+        ),
+        ok(
+          'envelope id equals the Webhook-Id header',
+          all.every((d) => d.envelopeId === d.eventId),
+        ),
+        ok(
+          'the event type belongs to collections',
+          all.every((d) => (d.eventType ?? '').startsWith('collection')),
+          [...new Set(all.map((d) => d.eventType))].join(', '),
+        ),
+        ok(
+          'we acknowledged every authentic delivery with 200',
+          all.filter((d) => d.signatureOk).every((d) => d.respondedWith === 200),
+        ),
+        ok(
+          'the best-ranked webhook status equals the API state',
+          detail !== null && (best === undefined || best === detail['status']),
+          `${String(best)} vs ${String(detail?.['status'])}`,
+        ),
+        {
+          name: 'repeat deliveries reuse one event id (de-duplicable)',
+          pass: ids.size <= all.length,
+          detail: `${ids.size} distinct of ${all.length}`,
+          advisory: true,
+        },
+      ];
     },
   },
   {

@@ -89,9 +89,9 @@ describe.skipIf(!dbUp)('correctness suite as a queued run (DB + safety gate + si
       failed: 0,
       errored: 0,
       skipped: 0,
-      total: CHECKS.length,
+      total: CHECKS.filter((c) => !c.liveOnly).length,
     });
-    expect(done.results).toHaveLength(CHECKS.length);
+    expect(done.results).toHaveLength(CHECKS.filter((c) => !c.liveOnly).length);
     expect(done.results!.every((r) => r.evidence.length > 0)).toBe(true);
     // Credentials and tokens must not reach stored evidence.
     const stored = JSON.stringify(done);

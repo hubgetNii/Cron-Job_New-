@@ -3,6 +3,7 @@ import { componentLogger } from '../../lib/logger.js';
 import { scrubPci } from '../../lib/pci.js';
 import { findTargetById } from '../../repositories/monitored-apis.repo.js';
 import { getKillSwitch } from '../../repositories/load-test-safety.repo.js';
+import * as webhooks from '../../repositories/load-test-webhooks.repo.js';
 import * as repo from '../../repositories/load-test-correctness.repo.js';
 import type { SuiteKind } from '../../repositories/load-test-correctness.repo.js';
 import { CHECKS, type Check } from '../../loadtest/correctness/checks.js';
@@ -113,7 +114,26 @@ export async function executeCorrectnessRun(
       tokenUrl: auth.env['LT_TOKEN_URL']!,
       ...(auth.env['LT_TOKEN_RESOURCE'] ? { resource: auth.env['LT_TOKEN_RESOURCE'] } : {}),
     };
+    // Live runs: if a receiver able to verify signatures exists, let the webhook check look at it.
+    const sink = simulator ? null : await webhooks.findUsableSink(run.apiId);
+    const liveWebhook = sink
+      ? {
+          label: sink.label,
+          deliveriesFor: async (reference: string) =>
+            (await webhooks.deliveriesForReference(sink.id, reference)).map((d) => ({
+              eventId: d.eventId,
+              envelopeId: d.envelopeId,
+              eventType: d.eventType,
+              eventStatus: d.eventStatus,
+              attempt: d.attempt,
+              signatureOk: d.signatureOk,
+              reason: d.reason,
+              respondedWith: d.respondedWith,
+            })),
+        }
+      : undefined;
     const report = await runSuite({
+      liveWebhook,
       client: {
         ...clientBase,
         clientId: auth.env['LT_TOKEN_USER']!,

@@ -7,6 +7,7 @@ import {
   type Assertion,
   type Check,
   type CheckContext,
+  type LiveWebhookProbe,
   type SimControl,
   type SimState,
 } from './checks.js';
@@ -65,6 +66,9 @@ export interface SuiteOptions {
   /** A credential for a different account, when one is configured (live) — the simulator derives its own. */
   secondClient?: ClientOptions | undefined;
   clientSecret?: string;
+  /** Live runs: the receiver iSmart delivers webhooks to (if one is set up). */
+  liveWebhook?: LiveWebhookProbe | undefined;
+  liveWebhookWaitMs?: number | undefined;
   /** Run only these checks (default: every applicable one). */
   only?: string[] | undefined;
   /** Run-unique token so references never collide with an earlier run. */
@@ -147,6 +151,8 @@ function makeContext(
     second,
     clientFor: (id) => (sim ? new ApiClient({ ...opts.client, clientId: id }) : null),
     sim,
+    liveWebhook: sim ? null : (opts.liveWebhook ?? null),
+    webhookWaitMs: opts.liveWebhookWaitMs ?? 90_000,
     webhookSecret: secret,
     settleTimeoutMs: settle,
     ref: () => `LTC-${opts.salt}-${++n}`,
@@ -218,7 +224,8 @@ export const applicableChecks = (
 ): Check[] =>
   pool
     .filter((c) => (only && only.length > 0 ? only.includes(c.id) : true))
-    .filter((c) => simulator || c.requires.length === 0);
+    .filter((c) => simulator || c.requires.length === 0)
+    .filter((c) => !(simulator && c.liveOnly));
 
 /** Runs the suite. Never throws for a failing check — failures are results. */
 export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
@@ -236,7 +243,9 @@ export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
   const chosen = applicableChecks(sim !== null, opts.only, pool);
   const skippedForMode = pool
     .filter((c) => (opts.only?.length ? opts.only.includes(c.id) : true))
-    .filter((c) => !chosen.includes(c));
+    .filter((c) => !chosen.includes(c))
+    // Live-only checks simply do not exist in a simulator run; they are not "missing" there.
+    .filter((c) => !(sim !== null && c.liveOnly));
   const results: CheckResult[] = [];
 
   const base = (

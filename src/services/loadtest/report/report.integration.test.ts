@@ -301,7 +301,7 @@ describe.skipIf(!dbUp)('report builder (DB + real suite results)', () => {
       await addSuite(sandboxId, 'correctness', correctness, { cls: 'MOCK' }),
     );
     expect(full.executive.verdict).toBe('PASS');
-    expect(full.checks).toHaveLength(CHECKS.length);
+    expect(full.checks).toHaveLength(CHECKS.filter((c) => !c.liveOnly).length);
     expect(full.coverageGaps).toEqual([]);
     expect(full.evidence.length).toBeGreaterThan(50);
     expect(full.checks.every((c) => c.whyItMatters.length > 10)).toBe(true);

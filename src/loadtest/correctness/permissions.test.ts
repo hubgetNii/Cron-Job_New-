@@ -121,6 +121,6 @@ describe('summarize', () => {
     expect(s.blocked).toBe(3);
   });
   it('knows the correctness checks exist', () => {
-    expect(CHECKS.length).toBe(16);
+    expect(CHECKS.length).toBe(17);
   });
 });

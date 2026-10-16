@@ -55,7 +55,7 @@ describe('correctness suite — a correct implementation', () => {
     const report = await run();
     expect(failing(report)).toEqual([]);
     expect(report.summary.verdict).toBe('PASS');
-    expect(report.summary.total).toBe(CHECKS.length);
+    expect(report.summary.total).toBe(CHECKS.filter((c) => !c.liveOnly).length);
     expect(report.summary.skipped).toBe(0);
     expect(report.mode).toBe('simulator');
     expect(report.results.every((r) => r.controls.length > 0)).toBe(true);
