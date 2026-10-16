@@ -58,6 +58,8 @@ export const loadTestRouter: Router = Router();
 
 const idParam = z.string().uuid();
 const canPlan = requireRole('ADMIN', 'OPERATOR', 'DEVELOPER');
+/** Read-only views of plans, runs, packs and the catalog — also for the roles that review results. */
+const canView = requireRole('ADMIN', 'OPERATOR', 'DEVELOPER', 'COMPLIANCE', 'MANAGEMENT');
 const adminOnly = requireRole('ADMIN');
 
 loadTestRouter.get('/load-tests/safety/status', canPlan, async (_req, res: Response) => {
@@ -240,7 +242,7 @@ loadTestRouter.post('/load-tests/plans', canPlan, async (req: Request, res: Resp
     .json({ data: await createPlan({ ...body, config: body.config }, actorFromRequest(req)) });
 });
 
-loadTestRouter.get('/load-tests/plans', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/plans', canView, async (req: Request, res: Response) => {
   const { apiId } = z.object({ apiId: z.string().uuid().optional() }).parse(req.query);
   const plans = await runs.listPlans(apiId);
   res.json({
@@ -248,7 +250,7 @@ loadTestRouter.get('/load-tests/plans', canPlan, async (req: Request, res: Respo
   });
 });
 
-loadTestRouter.get('/load-tests/plans/:id', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/plans/:id', canView, async (req: Request, res: Response) => {
   const plan = await runs.getPlan(idParam.parse(req.params.id));
   if (!plan) throw new NotFoundError('Plan not found');
   res.json({ data: { ...plan, peakRps: peakRps(PlanConfigSchema.parse(plan.config)) } });
@@ -267,20 +269,20 @@ const runsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-loadTestRouter.get('/load-tests/runs', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/runs', canView, async (req: Request, res: Response) => {
   const q = runsQuery.parse(req.query);
   const list = await runs.listRuns({ planId: q.planId, apiId: q.apiId, limit: q.limit });
   res.json({ data: q.status ? list.filter((r) => r.status === q.status) : list });
 });
 
-loadTestRouter.get('/load-tests/runs/:id', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/runs/:id', canView, async (req: Request, res: Response) => {
   const run = await runs.getRun(idParam.parse(req.params.id));
   if (!run) throw new NotFoundError('Run not found');
   res.json({ data: run });
 });
 
 /** Time-bucketed (5s) throughput/latency series — poll this while a run is live. */
-loadTestRouter.get('/load-tests/runs/:id/metrics', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/runs/:id/metrics', canView, async (req: Request, res: Response) => {
   const id = idParam.parse(req.params.id);
   if (!(await runs.getRun(id))) throw new NotFoundError('Run not found');
   res.json({ data: await runs.listMetrics(id) });
@@ -321,11 +323,11 @@ loadTestRouter.delete('/load-tests/data-sets/:id', canRun, async (req: Request, 
   res.status(204).end();
 });
 
-loadTestRouter.get('/load-tests/packs', canPlan, (_req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/packs', canView, (_req: Request, res: Response) => {
   res.json({ data: PACKS.map(packSummary) });
 });
 
-loadTestRouter.get('/load-tests/packs/:id', canPlan, (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/packs/:id', canView, (req: Request, res: Response) => {
   const pack = packById(String(req.params.id));
   if (!pack) throw new NotFoundError('Pack not found');
   res.json({
@@ -389,11 +391,11 @@ loadTestRouter.post('/load-tests/packs/:id/plans', canPlan, async (req: Request,
 /* ── API catalog & correctness suite (Phase 25) ────────────────────────── */
 
 /** Every documented iSmartPay endpoint and whether/how it can be load tested. */
-loadTestRouter.get('/load-tests/api-catalog', canPlan, (_req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/api-catalog', canView, (_req: Request, res: Response) => {
   res.json({ data: { summary: catalogSummary(), endpoints: CATALOG } });
 });
 
-loadTestRouter.get('/load-tests/correctness-checks', canPlan, (_req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/correctness-checks', canView, (_req: Request, res: Response) => {
   res.json({
     data: CHECKS.map((c) => ({
       id: c.id,
@@ -416,7 +418,7 @@ loadTestRouter.post('/load-tests/correctness-runs', canRun, async (req: Request,
   res.status(202).json({ data: run });
 });
 
-loadTestRouter.get('/load-tests/correctness-runs', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/correctness-runs', canView, async (req: Request, res: Response) => {
   const q = z
     .object({
       apiId: z.string().uuid().optional(),
@@ -428,7 +430,7 @@ loadTestRouter.get('/load-tests/correctness-runs', canPlan, async (req: Request,
 
 loadTestRouter.get(
   '/load-tests/correctness-runs/:id',
-  canPlan,
+  canView,
   async (req: Request, res: Response) => {
     const run = await correctness.getCorrectnessRun(idParam.parse(req.params.id));
     if (!run) throw new NotFoundError('Correctness run not found');
@@ -439,7 +441,7 @@ loadTestRouter.get(
 /* ── Security suite (Phase 26) ─────────────────────────────────────────── */
 
 /** OWASP API Security Top 10 (2023) checks the suite runs. */
-loadTestRouter.get('/load-tests/security-checks', canPlan, (_req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/security-checks', canView, (_req: Request, res: Response) => {
   res.json({
     data: SECURITY_CHECKS.map((c) => ({
       id: c.id,
@@ -458,7 +460,7 @@ loadTestRouter.post('/load-tests/security-runs', canRun, async (req: Request, re
   res.status(202).json({ data: run });
 });
 
-loadTestRouter.get('/load-tests/security-runs', canPlan, async (req: Request, res: Response) => {
+loadTestRouter.get('/load-tests/security-runs', canView, async (req: Request, res: Response) => {
   const q = z
     .object({
       apiId: z.string().uuid().optional(),
@@ -470,7 +472,7 @@ loadTestRouter.get('/load-tests/security-runs', canPlan, async (req: Request, re
 
 loadTestRouter.get(
   '/load-tests/security-runs/:id',
-  canPlan,
+  canView,
   async (req: Request, res: Response) => {
     const run = await correctness.getCorrectnessRun(idParam.parse(req.params.id));
     if (!run || run.suite !== 'security') throw new NotFoundError('Security run not found');

@@ -23,7 +23,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 |---|---|---|---|
 | B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
 | B11 | **Side-by-side run comparison** and a **scheduled regression** view (trend is per plan today) | C | Trend table exists; no diff view yet. |
-| B12 | Compliance/management roles can read reports but **cannot read plans, runs or the catalog** endpoints directly | C | Intentional for now (reports only); revisit with Phase 28. |
 | B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
 | B5 | **Scheduled regression runs** (correctness + security on a cadence; CI hook) | C | Phase 29 in the original plan. |
 | B6 | **Reference harvesting**: turn the references a run created into a data set for the `needs_data` poll packs | C | 7 catalog endpoints need ids from an earlier run; today that is manual. |
@@ -31,7 +30,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | B9 | Live-mode webhook receiver deployment for the correctness suite | B | Depends on A4. |
 | B10 | Monitoring the iSmart developer API itself in the cron monitor needs OAuth2 `form` mode in the health-check token cache (it only does Basic) | C | Only if you want to monitor, not just load-test, that API. |
 | B13 | **Compliance follow-ups**: scheduled evidence refresh (re-run suites so evidence never goes stale), optional pack signing with a managed key (hash is recorded today, not signed), second-person pack approval | C | Phase 28 follow-on. |
-| B14 | **Compliance page for MANAGEMENT** (read-only) — today the matrix is readable by COMPLIANCE/ADMIN; confirm who else needs it | U | Ties to B12. |
 
 ## C. Housekeeping / known issues
 
@@ -56,3 +54,4 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D5 | **Phase 28 compliance evidence** (was B3): 32-control DRAFT library, assessment engine, COMPLIANCE-only sign-off, tamper-evident evidence packs with verifier CLI, dashboard Compliance page | Phase 28, 2026-10-16 |
 | D6 | **Retention** for load-test and correctness run tables (was B7); compliance tables never pruned | Phase 28, 2026-10-16 |
 | D7 | **Run launcher and live console** (was B2): `/app/load-tests/launch` — pick service and scenario, tune profile/rps/duration/VUs, create example data sets, dry-run the safety gate, start or stop a run, live rps/p95/failure charts, recent runs, correctness and security suite launch. Remaining gap: no free-form plan editor (plans come from scenario packs) | B2, 2026-10-16 |
+| D8 | **Read access for COMPLIANCE and MANAGEMENT** (was B12/B14): plans, runs, metrics, packs, catalog and suite runs are now readable by them; starting runs, data sets and kill switch stay closed; the Compliance matrix was already readable | 2026-10-16 |

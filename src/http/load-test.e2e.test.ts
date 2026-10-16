@@ -627,6 +627,30 @@ describe.skipIf(!dbUp)('load-test safety foundation (Phase 21)', () => {
       .expect(404);
   });
 
+  it('review roles can read plans, runs, packs and the catalog but never start or change anything', async () => {
+    for (const token of [compliance, management]) {
+      for (const path of [
+        '/api/v1/load-tests/plans',
+        '/api/v1/load-tests/runs',
+        '/api/v1/load-tests/packs',
+        '/api/v1/load-tests/api-catalog',
+        '/api/v1/load-tests/correctness-runs',
+        '/api/v1/load-tests/security-runs',
+      ]) {
+        const res = await request(app).get(path).set(auth(token));
+        expect(res.status, path).toBe(200);
+      }
+      // Writes and sensitive reads stay closed.
+      const start = await request(app)
+        .post('/api/v1/load-tests/correctness-runs')
+        .set(auth(token))
+        .send({ apiId: '00000000-0000-4000-8000-000000000000' });
+      expect(start.status).toBe(403);
+      const sets = await request(app).get('/api/v1/load-tests/data-sets').set(auth(token));
+      expect(sets.status).toBe(403);
+    }
+  });
+
   it('validates a data set without echoing offending values', async () => {
     const res = await request(app)
       .post('/api/v1/load-tests/data-sets/validate')
