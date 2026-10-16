@@ -6,23 +6,18 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 
 | # | Item | Owner | Why it matters |
 |---|---|---|---|
-| A1 | A **test-console API key** (client id + secret) with `collections.write`, `disbursements.write`, `transactions.read` (+ the `.read` variants) | U | Nothing has run against the real sandbox yet. Everything so far is proven against the contract-accurate simulator. Then `npm run seed:ismart-sandbox`. |
 | A2 | Ask iSmart: **sandbox rate limits**; idempotency-key retention window; collection `failureReason` values; whether **wallet transfers have a test mode**; whether `POST /v1/settlements` moves real funds in test; party-lookup tolerance (forwarded to the provider); webhook retry gaps | U | The docs are silent. Ceilings are set to a cautious 25 rps until answered; simulator conventions are listed in `UNDOCUMENTED` in `src/loadtest/contract/ismartpay.ts`. |
-| A3 | A **second-account credential** (`tokenUsernameB`/`tokenPasswordB`) and a **read-only key** | U | Without them the live cross-account (BOLA) and permission checks are SKIPPED. |
-| A4 | A **public HTTPS webhook endpoint** (tunnel or the deployed API) registered in the test console | U | Live webhook authenticity/duplicate/retry checks need a receiver iSmart can reach. |
+| A3 | A **second-account credential** (`tokenUsernameB`/`tokenPasswordB`) and a genuinely **read-only key** | U | The key supplied as "read-only" on 2026-10-16 is identical to the full test key, so it proves nothing about permissions. Cross-account (BOLA) and permission checks stay SKIPPED until two distinct credentials exist. Note: sandbox account number 0553476530 was provided; a number is not a credential. |
+| A4 | **Deploy the API at a public HTTPS address** and register `https://<address>/hooks/loadtest/<slug>` in the iSmart test console, then paste the signing secret into the dashboard's Webhook receiver | U | The receiver is built (B9); iSmart needs a public address to reach it. Not exposed from the Mac. |
 | A5 | **Hetzner worker VM**: provision, install k6, set `LOAD_TEST_ENABLED=true`, `LT_SECRET_*`, DB access | U | Large runs must not share the monitor host or the Mac. |
-| A6 | **Launch volume estimate** (expected peak TPS per channel) | U | Plans use relative tiers until then; readiness scoring (Phase 27) needs a target. |
-| A7 | **Compliance owner**: which Bank of Ghana directives apply; QSA scoping; sign-off on DRAFT control mappings (Phase 28) | U | Mappings must not be presented as "covered" until reviewed. |
-| A8 | Confirm the **k6 + Node hybrid** engine decision explicitly | U | Assumed, never explicitly confirmed. |
-| A9 | Decide the policy for **read-only load on PRODUCTION** (currently ≤2 rps, 5 min, authorization required) and for any production approvals | U | Money-moving production load is hard-blocked regardless. |
-| A10 | **Push** the local commits to GitHub (you use your own token) | U | Work is only on this machine. |
+| A7 | **Compliance owner: Ibrahim** (named 2026-10-16). Needed from them: which Bank of Ghana directives apply and their exact clauses; QSA scoping; sign-off on the DRAFT control mappings | U | Mappings must not be presented as "covered" until reviewed. Ibrahim needs a dashboard user with the COMPLIANCE role (only that role can approve) — email still needed. |
 
 ## B. Still to build
 
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
-| B9 | Live-mode webhook receiver deployment for the correctness suite | B | Depends on A4. |
+| B9 | Wire the **live correctness webhook check** to the new receiver (it still uses an in-process listener) | C | Receiver built and tested; deployment is A4. |
 | B13 | **Compliance follow-ups**: optional pack signing with a managed key (hash is recorded today, not signed), second-person pack approval | C | Scheduled evidence refresh is done (D11). |
 
 ## C. Housekeeping / known issues
@@ -55,3 +50,8 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D12 | **Worker packaging** (was B4): `Dockerfile.loadtest-worker` (pinned k6 2.3.0, non-root), `docker-compose.loadtest-worker.yml` (read-only fs, no capabilities), env template, `docs/loadtest-worker-runbook.md`. Built and smoke-tested locally; the Hetzner VM itself is still A5 | B4, 2026-10-16 |
 | D13 | **Static auth types** (was B8): load runs now authenticate with API key (header or query), bearer, basic and custom-header targets as well as OAuth2/none; credentials reach k6 only through env; verified with real k6 against a capture server. The correctness/security suites remain iSmartPay-OAuth specific | B8, 2026-10-16 |
 | D14 | **Monitor OAuth2 `form` mode** (was B10): a target with `tokenMode: "form"` (and optional `tokenResource`) now authenticates the cron monitor with iSmartPay-style client credentials, so the developer API itself can be health-checked; short tokens refresh at 70% of life | B10, 2026-10-16 |
+| D15 | **Test-console API key** (was A1): registered as the sandbox load-test target (inactive for the monitor, class SANDBOX); a live token request returned HTTP 200 with a 300-second bearer token, matching the transcribed contract | 2026-10-16 |
+| D16 | **Launch volume** (was A6): Test 1 = 10,000 tx/day (sustained peak 10 TPS, high 20, stress 50); Test 2 = 100,000 tx/day (avg 1.16 TPS, peak 20, stress 50), six tiers each, available as presets in the Run page and `GET /load-tests/programme`; provisional pending confirmed volumes. Under today's sandbox ceiling (25 rps / 100 users / 30 min) the 30–50 TPS tiers, 250+ user tiers and 8-hour endurance run are automatically capped and flagged — raising the ceiling needs iSmart's agreement (A2) | 2026-10-16 |
+| D17 | **k6 + Node hybrid engine** confirmed (was A8) and the current production policy accepted (was A9: read-only ≤2 rps, 5 min, authorization required; money-moving production load refused) | 2026-10-16 |
+| D18 | **Pushed to GitHub** (was A10): `84486be..202c722`, 13 commits. Later work is local until pushed again | 2026-10-16 |
+| D19 | **Webhook receiver** (the build half of B9): public `POST /hooks/loadtest/<slug>` verifying the documented signature over the raw body, answering 401/503/404 correctly, recording every delivery with retry counts and masked bodies; dashboard card to create it, store the secret, and watch deliveries | 2026-10-16 |

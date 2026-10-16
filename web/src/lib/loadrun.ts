@@ -86,7 +86,39 @@ export interface MetricPoint {
   p95Ms: number;
   p99Ms: number;
 }
+export interface ProgrammeTier {
+  id: string;
+  label: string;
+  purpose: string;
+  peakRps: number;
+  fits: boolean;
+  reductions: string[];
+  plan: {
+    profile: Profile;
+    targetRps: number;
+    durationSeconds: number;
+    maxVus: number;
+    spikeMultiplier?: number;
+    requiredCapacityRps: number | null;
+  };
+}
+export interface Programme {
+  id: string;
+  title: string;
+  dailyVolume: number;
+  averageTps: number;
+  note: string;
+  tiers: ProgrammeTier[];
+}
+export interface ProgrammeResponse {
+  provisional: boolean;
+  ceiling: { maxRps: number; maxVus: number; maxDurationSeconds: number };
+  programmes: Programme[];
+}
+
 export interface PlanParams {
+  spikeMultiplier?: number;
+  requiredCapacityRps?: number;
   apiId: string;
   dataSetId?: string;
   profile?: Profile;
@@ -107,6 +139,27 @@ export interface ScheduleInfo {
   lastRunId: string | null;
   lastOutcome: 'QUEUED' | 'REFUSED' | 'SKIPPED_BUSY' | 'ERROR' | null;
   lastMessage: string | null;
+}
+
+export interface SinkInfo {
+  id: string;
+  label: string;
+  slug: string;
+  hasSecret: boolean;
+  enabled: boolean;
+  deliveries: number;
+  lastDeliveryAt: string | null;
+}
+export interface DeliveryInfo {
+  id: number;
+  eventId: string;
+  eventType: string | null;
+  reference: string | null;
+  attempt: number;
+  signatureOk: boolean;
+  reason: string | null;
+  respondedWith: number;
+  receivedAt: string;
 }
 
 export const isLive = (s: RunStatus): boolean =>
@@ -139,6 +192,19 @@ export const runApi = {
     post<DataSetInfo & { caveat: string | null }>(`/load-tests/runs/${runId}/harvest-references`, {
       limit,
     }),
+  programme: () => req<Wrapped<ProgrammeResponse>>('/load-tests/programme').then((r) => r.data),
+  sinks: () => req<Wrapped<SinkInfo[]>>('/load-tests/webhook-sinks').then((r) => r.data),
+  createSink: (label: string) => post<SinkInfo>('/load-tests/webhook-sinks', { label }),
+  setSinkSecret: (id: string, secret: string) =>
+    req<Wrapped<SinkInfo>>(`/load-tests/webhook-sinks/${id}/secret`, {
+      method: 'PUT',
+      body: JSON.stringify({ secret }),
+    }).then((r) => r.data),
+  deliveries: (id: string) =>
+    req<Wrapped<DeliveryInfo[]>>(`/load-tests/webhook-sinks/${id}/deliveries?limit=30`).then(
+      (r) => r.data,
+    ),
+  deleteSink: (id: string) => req<unknown>(`/load-tests/webhook-sinks/${id}`, { method: 'DELETE' }),
   schedules: () => req<Wrapped<ScheduleInfo[]>>('/load-tests/schedules').then((r) => r.data),
   saveSchedule: (apiId: string, suite: ScheduleInfo['suite'], cron: string) =>
     post<ScheduleInfo>('/load-tests/schedules', { apiId, suite, cron }),

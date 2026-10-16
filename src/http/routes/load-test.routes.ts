@@ -29,6 +29,10 @@ import {
   setScheduleEnabled,
 } from '../../services/loadtest/schedule.service.js';
 import { listSchedules } from '../../repositories/load-test-schedules.repo.js';
+import { PROGRAMMES, fitTier } from '../../loadtest/programme.js';
+import { parseCeilings } from '../../domain/load-safety.js';
+import * as sinks from '../../services/loadtest/webhook-sink.service.js';
+import * as sinkRepo from '../../repositories/load-test-webhooks.repo.js';
 import { harvestReferences } from '../../services/loadtest/harvest.service.js';
 import * as runs from '../../repositories/load-test-runs.repo.js';
 import { abortRun, createPlan, queueRun } from '../../services/loadtest/run.service.js';
@@ -397,6 +401,8 @@ const packPlanBody = z.object({
   durationSeconds: z.number().int().positive().optional(),
   maxVus: z.number().int().positive().optional(),
   batchSize: z.number().int().min(1).max(100).optional(),
+  spikeMultiplier: z.number().min(2).max(50).optional(),
+  requiredCapacityRps: z.number().positive().optional(),
 });
 
 /** Instantiates a pack into a plan (data-set fields and safety flags are checked). */
@@ -618,3 +624,70 @@ loadTestRouter.delete('/load-tests/schedules/:id', canRun, async (req: Request, 
   await removeSchedule(idParam.parse(req.params.id), actorFromRequest(req));
   res.status(204).end();
 });
+
+/**
+ * The agreed test programme (launch-volume tiers), each tier fitted under the
+ * SANDBOX ceiling. Anything the ceiling forces down is reported, never hidden.
+ */
+loadTestRouter.get('/load-tests/programme', canView, (_req: Request, res: Response) => {
+  const ceiling = parseCeilings(env().LOAD_TEST_CEILINGS).SANDBOX;
+  res.json({
+    data: {
+      provisional: true,
+      ceiling,
+      programmes: PROGRAMMES.map((p) => ({
+        ...p,
+        tiers: p.tiers.map((t) => fitTier(t, ceiling)),
+      })),
+    },
+  });
+});
+
+/* ── Webhook sinks (B9): the public receiver lives in webhook-hook.routes.ts ── */
+
+loadTestRouter.get('/load-tests/webhook-sinks', canView, async (_req: Request, res: Response) => {
+  res.json({ data: await sinkRepo.listSinks() });
+});
+
+loadTestRouter.post('/load-tests/webhook-sinks', canRun, async (req: Request, res: Response) => {
+  const body = z
+    .object({
+      label: z.string().min(2).max(100),
+      apiId: z.string().uuid().nullable().default(null),
+    })
+    .parse(req.body);
+  res.status(201).json({ data: await sinks.createSink(body, actorFromRequest(req)) });
+});
+
+loadTestRouter.put(
+  '/load-tests/webhook-sinks/:id/secret',
+  canRun,
+  async (req: Request, res: Response) => {
+    const { secret } = z.object({ secret: z.string().min(8).max(500) }).parse(req.body);
+    res.json({
+      data: await sinks.setSinkSecret(idParam.parse(req.params.id), secret, actorFromRequest(req)),
+    });
+  },
+);
+
+loadTestRouter.get(
+  '/load-tests/webhook-sinks/:id/deliveries',
+  canView,
+  async (req: Request, res: Response) => {
+    const id = idParam.parse(req.params.id);
+    if (!(await sinkRepo.getSink(id))) throw new NotFoundError('Webhook sink not found');
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+      .parse(req.query);
+    res.json({ data: await sinkRepo.listDeliveries(id, limit) });
+  },
+);
+
+loadTestRouter.delete(
+  '/load-tests/webhook-sinks/:id',
+  canRun,
+  async (req: Request, res: Response) => {
+    await sinks.removeSink(idParam.parse(req.params.id), actorFromRequest(req));
+    res.status(204).end();
+  },
+);

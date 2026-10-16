@@ -24,6 +24,10 @@ export interface PackParams {
   dataSetId?: string | undefined;
   /** Items per request for batch packs. */
   batchSize?: number | undefined;
+  /** SPIKE: burst height as a multiple of targetRps. */
+  spikeMultiplier?: number | undefined;
+  /** Requests/s the service must sustain cleanly (the launch estimate). */
+  requiredCapacityRps?: number | null | undefined;
 }
 
 export interface ExampleDataSet {
@@ -619,6 +623,10 @@ export function planFromPack(pack: ScenarioPack, params: PackParams): PlanConfig
     fanout: pack.fanout(params),
     packId: pack.id,
     ...(params.dataSetId ? { dataSetId: params.dataSetId } : {}),
+    ...(params.spikeMultiplier ? { spikeMultiplier: params.spikeMultiplier } : {}),
+    ...(params.requiredCapacityRps
+      ? { slo: { requiredCapacityRps: params.requiredCapacityRps } }
+      : {}),
   });
 }
 

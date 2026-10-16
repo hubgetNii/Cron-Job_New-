@@ -17,6 +17,7 @@ import { incidentRouter } from './routes/incident.routes.js';
 import { alertRouter } from './routes/alert.routes.js';
 import { dashboardRouter } from './routes/dashboard.routes.js';
 import { configRequestRouter } from './routes/config-request.routes.js';
+import { webhookHookRouter } from './routes/webhook-hook.routes.js';
 import { statusRouter } from './routes/status.routes.js';
 import { aiRouter } from './routes/ai.routes.js';
 import { intelligenceRouter } from './routes/intelligence.routes.js';
@@ -56,6 +57,9 @@ export function createApp(): Express {
       crossOriginResourcePolicy: { policy: 'same-site' },
     }),
   );
+  // Public webhook receiver: needs the RAW body for signature checks, so it must sit
+  // before the JSON parser. Authenticity comes from the unguessable slug + the signature.
+  app.use('/hooks/loadtest', webhookHookRouter);
   app.use(express.json({ limit: '1mb' }));
   app.use(requestContext);
 

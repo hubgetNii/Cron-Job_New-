@@ -17,6 +17,7 @@ import {
   type LoadRunInfo,
   type MetricPoint,
   type PackInfo,
+  type ProgrammeTier,
   type Profile,
   type RunStatus,
   type Safety,
@@ -188,6 +189,12 @@ function LoadForm({
   const [vus, setVus] = useState(rec.maxVus);
   const [dataSetId, setDataSetId] = useState('');
   const [ack, setAck] = useState(false);
+  const [tier, setTier] = useState<ProgrammeTier | null>(null);
+  const { data: programme } = useQuery({
+    queryKey: ['lt-programme'],
+    queryFn: runApi.programme,
+    staleTime: 300_000,
+  });
   const [safety, setSafety] = useState<Safety | null>(null);
   const needsData = pack.dataFields.length > 0;
   const risky = pack.realSideEffects || pack.moneyMoving;
@@ -214,6 +221,10 @@ function LoadForm({
         durationSeconds: dur,
         maxVus: vus,
         ...(dataSetId ? { dataSetId } : {}),
+        ...(tier?.plan.spikeMultiplier ? { spikeMultiplier: tier.plan.spikeMultiplier } : {}),
+        ...(tier?.plan.requiredCapacityRps
+          ? { requiredCapacityRps: tier.plan.requiredCapacityRps }
+          : {}),
       });
       return runApi.queue(plan.id);
     },
@@ -243,13 +254,64 @@ function LoadForm({
           {pack.caution}
         </p>
       )}
+      {programme && (
+        <div className="space-y-1 rounded-md border border-[var(--color-border)] p-3">
+          <label className="block text-xs">
+            Test programme tier (optional)
+            <select
+              className={field}
+              value={tier?.id ?? ''}
+              onChange={(e) => {
+                const t =
+                  programme.programmes
+                    .flatMap((p) => p.tiers)
+                    .find((x) => x.id === e.target.value) ?? null;
+                setTier(t);
+                if (t) {
+                  setProfile(t.plan.profile);
+                  setRps(t.plan.targetRps);
+                  setDur(t.plan.durationSeconds);
+                  setVus(t.plan.maxVus);
+                }
+              }}
+            >
+              <option value="">Custom values</option>
+              {programme.programmes.map((p) => (
+                <optgroup key={p.id} label={p.title}>
+                  {p.tiers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} — up to {t.peakRps} req/s{t.fits ? '' : ' (capped)'}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          {tier && (
+            <p className="text-xs text-[var(--color-text-muted)]">
+              {tier.purpose}.{' '}
+              {tier.fits ? (
+                'Runs at the full target.'
+              ) : (
+                <span className="text-[var(--color-degraded)]">
+                  Reduced to fit the sandbox limits: {tier.reductions.join('; ')}. Targets are
+                  provisional until iSmart confirms what the sandbox can take.
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-4">
         <label className="text-xs">
           Profile
           <select
             className={field}
             value={profile}
-            onChange={(e) => setProfile(e.target.value as Profile)}
+            onChange={(e) => {
+              setProfile(e.target.value as Profile);
+              setTier(null);
+            }}
           >
             {PROFILES.map((p) => (
               <option key={p}>{p}</option>
@@ -263,7 +325,10 @@ function LoadForm({
             type="number"
             min={1}
             value={rps}
-            onChange={(e) => setRps(num(e.target.value))}
+            onChange={(e) => {
+              setRps(num(e.target.value));
+              setTier(null);
+            }}
           />
         </label>
         <label className="text-xs">
@@ -273,7 +338,10 @@ function LoadForm({
             type="number"
             min={5}
             value={dur}
-            onChange={(e) => setDur(num(e.target.value))}
+            onChange={(e) => {
+              setDur(num(e.target.value));
+              setTier(null);
+            }}
           />
         </label>
         <label className="text-xs">
@@ -283,7 +351,10 @@ function LoadForm({
             type="number"
             min={1}
             value={vus}
-            onChange={(e) => setVus(num(e.target.value))}
+            onChange={(e) => {
+              setVus(num(e.target.value));
+              setTier(null);
+            }}
           />
         </label>
       </div>
@@ -559,6 +630,193 @@ function SchedulesCard({
   );
 }
 
+function WebhookCard({ canRun }: { canRun: boolean }) {
+  const qc = useQueryClient();
+  const { data: sinks = [] } = useQuery({
+    queryKey: ['lt-sinks'],
+    queryFn: runApi.sinks,
+    refetchInterval: 10_000,
+  });
+  const refresh = (): void => void qc.invalidateQueries({ queryKey: ['lt-sinks'] });
+  const [label, setLabel] = useState('Sandbox load test');
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [base, setBase] = useState(() => {
+    try {
+      return localStorage.getItem('cronmon.publicBase') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const { data: deliveries = [] } = useQuery({
+    queryKey: ['lt-deliveries', openId],
+    queryFn: () => runApi.deliveries(openId!),
+    enabled: openId != null,
+    refetchInterval: 5_000,
+  });
+  const create = useMutation({ mutationFn: () => runApi.createSink(label), onSuccess: refresh });
+  const setSecret = useMutation({
+    mutationFn: (v: { id: string; secret: string }) => runApi.setSinkSecret(v.id, v.secret),
+    onSuccess: (_d, v) => {
+      setSecrets((s) => ({ ...s, [v.id]: '' }));
+      refresh();
+    },
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => runApi.deleteSink(id),
+    onSuccess: refresh,
+  });
+  const field =
+    'h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-2 text-sm';
+  const urlFor = (slug: string): string =>
+    `${base.replace(/\/$/, '') || 'https://<your-public-api-address>'}/hooks/loadtest/${slug}`;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Webhook receiver</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          A public address iSmart can deliver sandbox webhooks to. It checks every signature the
+          documented way, answers 401 to anything it cannot authenticate, and records every delivery
+          — including retries, duplicates and forgeries — so the tests can inspect them. Register
+          the address in the iSmart test console, then paste the signing secret iSmart gives you
+          below.
+        </p>
+        <label className="block text-xs">
+          Public address of this API (so the full webhook URL can be shown)
+          <input
+            className={`${field} block w-full max-w-md`}
+            placeholder="https://monitor.example.com"
+            value={base}
+            onChange={(e) => {
+              setBase(e.target.value);
+              try {
+                localStorage.setItem('cronmon.publicBase', e.target.value);
+              } catch {
+                /* optional */
+              }
+            }}
+          />
+        </label>
+        {sinks.map((s) => (
+          <div key={s.id} className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium">{s.label}</span>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {s.deliveries} deliveries
+                {s.lastDeliveryAt ? ` · last ${new Date(s.lastDeliveryAt).toLocaleString()}` : ''}
+              </span>
+            </div>
+            <code className="block break-all rounded bg-[var(--color-surface-2)] p-2 text-xs">
+              {urlFor(s.slug)}
+            </code>
+            {!s.hasSecret && (
+              <p className="text-xs text-[var(--color-degraded)]">
+                No signing secret yet — deliveries are recorded but answered 503 until you add it.
+              </p>
+            )}
+            {canRun && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  className={`${field} w-72`}
+                  type="password"
+                  autoComplete="off"
+                  placeholder={
+                    s.hasSecret ? 'Replace signing secret…' : 'Signing secret from iSmart'
+                  }
+                  value={secrets[s.id] ?? ''}
+                  onChange={(e) => setSecrets((x) => ({ ...x, [s.id]: e.target.value }))}
+                />
+                <Button
+                  size="sm"
+                  disabled={(secrets[s.id] ?? '').length < 8 || setSecret.isPending}
+                  onClick={() => setSecret.mutate({ id: s.id, secret: secrets[s.id] ?? '' })}
+                >
+                  Save secret
+                </Button>
+                <button
+                  className="text-xs underline"
+                  onClick={() => setOpenId(openId === s.id ? null : s.id)}
+                >
+                  {openId === s.id ? 'Hide deliveries' : 'Show deliveries'}
+                </button>
+                <button className="text-xs underline" onClick={() => del.mutate(s.id)}>
+                  Delete
+                </button>
+              </div>
+            )}
+            {openId === s.id && (
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Received</TH>
+                    <TH>Event</TH>
+                    <TH>Reference</TH>
+                    <TH>Try</TH>
+                    <TH>Signature</TH>
+                    <TH>Answered</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {deliveries.map((d) => (
+                    <TR key={d.id}>
+                      <TD className="whitespace-nowrap text-xs">
+                        {new Date(d.receivedAt).toLocaleTimeString()}
+                      </TD>
+                      <TD className="text-xs">
+                        {d.eventType ?? '—'}
+                        <div className="font-mono text-[11px] text-[var(--color-text-faint)]">
+                          {d.eventId}
+                        </div>
+                      </TD>
+                      <TD className="font-mono text-xs">{d.reference ?? '—'}</TD>
+                      <TD className="text-xs tabular-nums">{d.attempt}</TD>
+                      <TD
+                        className="text-xs"
+                        style={{ color: d.signatureOk ? 'var(--color-up)' : 'var(--color-down)' }}
+                        title={d.reason ?? undefined}
+                      >
+                        {d.signatureOk ? 'valid' : (d.reason ?? 'invalid')}
+                      </TD>
+                      <TD className="text-xs tabular-nums">{d.respondedWith}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </div>
+        ))}
+        {sinks.length === 0 && (
+          <p className="text-sm text-[var(--color-text-faint)]">No receiver yet.</p>
+        )}
+        {canRun && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className={`${field} w-64`}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              aria-label="Receiver name"
+            />
+            <Button
+              size="sm"
+              disabled={label.trim().length < 2 || create.isPending}
+              onClick={() => create.mutate()}
+            >
+              Create receiver
+            </Button>
+          </div>
+        )}
+        {[create.error, setSecret.error, del.error].filter(Boolean).map((e, i) => (
+          <p key={i} className="text-sm text-[var(--color-down)]">
+            {errText(e)}
+          </p>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function SuiteRunsTable({ rows }: { rows: SuiteRunInfo[] }) {
   return (
     <Table>
@@ -795,6 +1053,7 @@ export function LoadTestLaunchPage() {
           )}
         </CardContent>
       </Card>
+      <WebhookCard canRun={canRun} />
       <SchedulesCard targets={targets} canRun={canRun} />
       <Card>
         <CardHeader>
