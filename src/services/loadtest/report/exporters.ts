@@ -401,7 +401,7 @@ export function renderPdf(report: AnyReport): Promise<Buffer> {
 
 /* ── HTML ──────────────────────────────────────────────────────────────── */
 
-const esc = (v: unknown): string =>
+export const esc = (v: unknown): string =>
   text(v).replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
@@ -431,7 +431,7 @@ const pill = (s: string): string => {
   return `<span class="pill ${v.cls}">${esc(v.label)}</span>`;
 };
 
-function htmlTable(headers: string[], rows: string[][]): string {
+export function htmlTable(headers: string[], rows: string[][]): string {
   if (rows.length === 0) return '<p class="muted">Nothing to show.</p>';
   return `<div class="tablewrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
@@ -477,7 +477,7 @@ function findingsHtml(findings: AnyReportFinding[]): string {
     .join('\n');
 }
 
-const CSS = `
+export const CSS = `
 :root{--ink:#18181b;--muted:#71717a;--line:#e4e4e7;--bg:#fff;--soft:#f4f4f5;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;--blue:#2563eb}
 *{box-sizing:border-box}body{margin:0;background:var(--soft);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 main{max-width:980px;margin:0 auto;padding:24px 16px 64px}section{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}

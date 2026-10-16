@@ -68,6 +68,10 @@ const EnvSchema = z.object({
   RETENTION_HEARTBEAT_DAYS: z.coerce.number().int().positive().default(7),
   RETENTION_ALERT_DAYS: z.coerce.number().int().positive().default(120),
   RETENTION_DIGEST_DAYS: z.coerce.number().int().positive().default(180),
+  // Load-test runs, correctness/security runs (metrics cascade with their run). Kept past
+  // 12 months by default so a year of evidence is available to an audit. Compliance reviews
+  // and evidence packs are NEVER pruned.
+  RETENTION_LOADTEST_DAYS: z.coerce.number().int().positive().default(400),
 
   // Latency intelligence (Phase 14). Current-window size + baseline lookback.
   LATENCY_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),

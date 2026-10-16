@@ -1,6 +1,6 @@
 # Fintech Load Testing & Compliance Assurance — Feature Plan (Phases 21–28)
 
-Status: **Phases 21–27 BUILT (2026-10-15/16); 28 planned.** Open items: see `docs/load-testing-open-items.md`. Continues numbering after Phases 12–20 (observability & reporting).
+Status: **Phases 21–28 BUILT (2026-10-15/16).** Open items: see `docs/load-testing-open-items.md`. Continues numbering after Phases 12–20 (observability & reporting).
 
 ## 1. Goal
 
@@ -379,5 +379,13 @@ Aligned to the **OWASP API Security Top 10 (2023)**. It checks that defences *ho
 2. **Live webhook checks** need a public HTTPS endpoint (tunnel or the deployed API).
 3. One e2e test (`denies by default and requires roles`) failed once in a full run with 404 instead of 403 and did not reproduce in two reruns — unexplained; watch for recurrence.
 
+### Phase 28 — compliance evidence (done, 608 tests total)
+- **Control library** (`src/loadtest/compliance/controls.ts`, version `2026.10.16-draft-1`): 32 controls — PCI DSS 4.0.1 (3.3, 3.4, 4.2, 6.2, 6.4, 7.2, 8.3, 10.2, 2.2; 11.4 and 12.10 marked out of scope), OWASP API1–10, Bank of Ghana themes, Ghana Data Protection Act themes. Every control states what it proves, its limitation and, if our tests cannot cover it, how to cover it. Bank of Ghana and DPA references are `refVerified:false` — themes, not clauses.
+- **Assessment engine** (`assess.ts`, pure): EVIDENCED / EVIDENCED_STALE (older than 90 days) / PARTIAL / SIMULATOR_ONLY / NOT_TESTED / FAILING / OUT_OF_SCOPE. Simulator runs never count as evidence. A reviewer overlay (Draft/Approved/Rejected/Changes requested/Review out of date) is tied to the library version, so editing the library invalidates old approvals.
+- **Sign-off**: append-only `compliance_reviews`; only the COMPLIANCE role can approve (ADMIN deliberately cannot).
+- **Evidence pack** (`pack.ts`): deterministic zip with the matrix (HTML/PDF/XLSX/CSV), every cited report, per-call evidence, reviews, `manifest.json` and `SHA256SUMS`. The manifest hash is recorded in append-only `compliance_evidence_packs` at issue time; verification returns AUTHENTIC / INTACT_BUT_NOT_ISSUED_HERE / TAMPERED / INVALID. CLI: `npm run verify:evidence-pack -- <zip> [--check-issued]`.
+- **API**: `/api/v1/compliance/*` (library, assessment, review, packs, download, verify). **Dashboard**: `Compliance` page (framework tabs, expandable evidence linked to the run reports, review form, pack list/download/verify).
+- **Retention** (closes B7): `RETENTION_LOADTEST_DAYS` (default 400); compliance tables are never pruned.
+
 ### Next
-Phase 26 — security / abuse-resilience suite (OWASP API Top 10: BOLA, auth, resource consumption, business-flow abuse, misconfiguration) · Phase 28 — compliance evidence (PCI DSS / OWASP / Bank of Ghana mapping, tamper-evident evidence packs).
+Open-items closeout walkthrough (`docs/load-testing-open-items.md`).

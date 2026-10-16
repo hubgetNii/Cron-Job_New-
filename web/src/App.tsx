@@ -16,6 +16,7 @@ import { ObservabilityPage } from '@/pages/observability';
 import { ReportsPage } from '@/pages/reports';
 import { LoadTestsPage } from '@/pages/load-tests';
 import { LoadTestReportPage } from '@/pages/load-test-report';
+import { CompliancePage } from '@/pages/compliance';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },
@@ -47,6 +48,7 @@ const router = createBrowserRouter([
           { path: 'reports', element: <ReportsPage /> },
           { path: 'load-tests', element: <LoadTestsPage /> },
           { path: 'load-tests/:kind/:id', element: <LoadTestReportPage /> },
+          { path: 'compliance', element: <CompliancePage /> },
         ],
       },
     ],

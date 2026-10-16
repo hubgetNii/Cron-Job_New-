@@ -71,6 +71,21 @@ function specs(): ClassSpec[] {
       tsColumn: 'generated_at',
       days: e.RETENTION_DIGEST_DAYS,
     },
+    // Load-testing evidence. load_test_metrics cascade with their run. Plans are small and kept.
+    {
+      name: 'load_test_runs',
+      table: 'load_test_runs',
+      tsColumn: 'finished_at',
+      days: e.RETENTION_LOADTEST_DAYS,
+      extra: `status IN ('COMPLETED','ABORTED','FAILED')`,
+    },
+    {
+      name: 'load_test_correctness_runs',
+      table: 'load_test_correctness_runs',
+      tsColumn: 'finished_at',
+      days: e.RETENTION_LOADTEST_DAYS,
+      extra: `status IN ('COMPLETED','ABORTED','FAILED')`,
+    },
   ];
 }
 
@@ -133,6 +148,8 @@ export async function retentionStatus(): Promise<RetentionStatusRow[]> {
     { name: 'audit_logs', table: 'audit_logs', ts: 'created_at' },
     { name: 'sla_reports', table: 'sla_reports', ts: 'generated_at' },
     { name: 'incident_events', table: 'incident_events', ts: 'at' },
+    { name: 'compliance_reviews', table: 'compliance_reviews', ts: 'created_at' },
+    { name: 'compliance_evidence_packs', table: 'compliance_evidence_packs', ts: 'created_at' },
   ];
 
   const out: RetentionStatusRow[] = [];

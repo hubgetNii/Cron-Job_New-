@@ -25,14 +25,14 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | B2 | **Dashboard: plan builder, run launcher and live run console** (create a plan from a pack, pick a data set, queue/abort a run, watch it live) | C | The Load Tests area is read-only: reports, readiness and the catalog are built; runs are still started via the API. Needs a live metrics stream (SSE) or polling view. |
 | B11 | **Side-by-side run comparison** and a **scheduled regression** view (trend is per plan today) | C | Trend table exists; no diff view yet. |
 | B12 | Compliance/management roles can read reports but **cannot read plans, runs or the catalog** endpoints directly | C | Intentional for now (reports only); revisit with Phase 28. |
-| B3 | **Phase 28 — compliance evidence**: PCI DSS v4.0.1 / OWASP / BoG / data-protection mappings (DRAFT), evidence pack with SHA-256 manifest, reviewer sign-off | C | Control tags already on every check; mapping + pack still to do. |
 | B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
 | B5 | **Scheduled regression runs** (correctness + security on a cadence; CI hook) | C | Phase 29 in the original plan. |
 | B6 | **Reference harvesting**: turn the references a run created into a data set for the `needs_data` poll packs | C | 7 catalog endpoints need ids from an earlier run; today that is manual. |
-| B7 | **Retention** for `load_test_*` tables (metrics, results, evidence) in `retention.service.ts` | C | Not yet pruned. |
 | B8 | Runner auth beyond `NONE` / `OAUTH2` (API key, bearer, custom header) | C | Fails with a clear message today. |
 | B9 | Live-mode webhook receiver deployment for the correctness suite | B | Depends on A4. |
 | B10 | Monitoring the iSmart developer API itself in the cron monitor needs OAuth2 `form` mode in the health-check token cache (it only does Basic) | C | Only if you want to monitor, not just load-test, that API. |
+| B13 | **Compliance follow-ups**: scheduled evidence refresh (re-run suites so evidence never goes stale), optional pack signing with a managed key (hash is recorded today, not signed), second-person pack approval | C | Phase 28 follow-on. |
+| B14 | **Compliance page for MANAGEMENT** (read-only) — today the matrix is readable by COMPLIANCE/ADMIN; confirm who else needs it | U | Ties to B12. |
 
 ## C. Housekeeping / known issues
 
@@ -54,3 +54,5 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D2 | Human-readable report page (Summary / Technical toggle) in the dashboard, role access for COMPLIANCE and MANAGEMENT | Phase 27, 2026-10-16 |
 | D3 | False "saturated generator" on slow targets (VU pre-allocation assumed fast responses) | Phase 27, 2026-10-16 |
 | D4 | Demo data for the dashboard (`npm run demo:loadtest`, removable with `-- --clean`) | Phase 27, 2026-10-16 |
+| D5 | **Phase 28 compliance evidence** (was B3): 32-control DRAFT library, assessment engine, COMPLIANCE-only sign-off, tamper-evident evidence packs with verifier CLI, dashboard Compliance page | Phase 28, 2026-10-16 |
+| D6 | **Retention** for load-test and correctness run tables (was B7); compliance tables never pruned | Phase 28, 2026-10-16 |

@@ -258,6 +258,18 @@ export async function fetchBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+/** Authenticated binary upload (e.g. submitting an evidence pack for verification). */
+export async function postBinary<T>(path: string, body: Blob, contentType: string): Promise<T> {
+  const res = await rawFetch(path, { method: 'POST', body, headers: { 'content-type': contentType } });
+  const text = await res.text();
+  const parsed = text ? (JSON.parse(text) as unknown) : null;
+  if (!res.ok) {
+    const err = parsed as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(err?.error?.message ?? `Request failed (${res.status})`, res.status, err?.error?.code);
+  }
+  return parsed as T;
+}
+
 /** Public, unauthenticated — the status page must work with no session. */
 export async function fetchPublicStatus(): Promise<PublicStatus> {
   const res = await fetch(`${BASE}/status`);

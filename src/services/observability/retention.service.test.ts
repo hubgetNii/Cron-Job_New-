@@ -32,6 +32,73 @@ describe.skipIf(!dbUp)('data retention (Phase 20)', () => {
     await query(`DELETE FROM scheduler_heartbeats`);
   });
 
+  it('prunes old FINISHED load-test runs (metrics cascade), keeps recent and unfinished ones, and never touches compliance records', async () => {
+    process.env['RETENTION_LOADTEST_DAYS'] = '30';
+    resetEnvCache();
+    try {
+      await query(`DELETE FROM load_test_plans`);
+      await query(`DELETE FROM load_test_correctness_runs`);
+      await query(`TRUNCATE compliance_reviews, compliance_evidence_packs`);
+      const plan = (
+        await query<{ id: string }>(
+          `INSERT INTO load_test_plans (api_id, name, profile, config) VALUES ($1,'ret','LOAD','{}') RETURNING id`,
+          [apiId],
+        )
+      ).rows[0]!.id;
+      const mk = async (status: string, ageDays: number): Promise<string> =>
+        (
+          await query<{ id: string }>(
+            `INSERT INTO load_test_runs (plan_id, api_id, status, plan_snapshot, queued_at, finished_at)
+             VALUES ($1,$2,$3,'{}', now() - ($4 || ' days')::interval, now() - ($4 || ' days')::interval) RETURNING id`,
+            [plan, apiId, status, String(ageDays)],
+          )
+        ).rows[0]!.id;
+      const oldDone = await mk('COMPLETED', 60);
+      const oldQueued = await mk('QUEUED', 60); // never finished → must NOT be pruned
+      const fresh = await mk('COMPLETED', 2);
+      await query(
+        `INSERT INTO load_test_metrics (run_id, bucket_start, requests, failures, rps, avg_ms, p50_ms, p95_ms, p99_ms, max_ms, status_counts)
+         VALUES ($1, now(), 1, 0, 1, 1, 1, 1, 1, 1, '{}')`,
+        [oldDone],
+      );
+      await query(
+        `INSERT INTO load_test_correctness_runs (api_id, status, finished_at) VALUES ($1,'COMPLETED', now() - interval '60 days'), ($1,'COMPLETED', now())`,
+        [apiId],
+      );
+      await query(
+        `INSERT INTO compliance_reviews (control_id, library_version, decision, note, reviewer_id, reviewer_label) VALUES ('OWASP-API1','v','APPROVED','kept forever, never pruned', gen_random_uuid(), 'x')`,
+      );
+      await query(`UPDATE compliance_reviews SET created_at = created_at`).catch(() => undefined); // append-only: this must fail, harmlessly
+
+      const result = await runRetention();
+      expect(result.pruned.find((p) => p.class === 'load_test_runs')!.deleted).toBe(1);
+      expect(result.pruned.find((p) => p.class === 'load_test_correctness_runs')!.deleted).toBe(1);
+
+      const ids = (await query<{ id: string }>(`SELECT id FROM load_test_runs`)).rows.map(
+        (r) => r.id,
+      );
+      expect(ids.sort()).toEqual([oldQueued, fresh].sort());
+      expect(
+        (await query(`SELECT 1 FROM load_test_metrics WHERE run_id = $1`, [oldDone])).rowCount,
+      ).toBe(0); // cascaded
+      expect((await query(`SELECT 1 FROM compliance_reviews`)).rowCount).toBe(1);
+
+      const status = await retentionStatus();
+      for (const c of ['compliance_reviews', 'compliance_evidence_packs']) {
+        expect(status.find((r) => r.class === c)).toMatchObject({
+          retentionDays: null,
+          overdue: 0,
+        });
+      }
+    } finally {
+      delete process.env['RETENTION_LOADTEST_DAYS'];
+      resetEnvCache();
+      await query(`DELETE FROM load_test_plans`);
+      await query(`DELETE FROM load_test_correctness_runs`);
+      await query(`TRUNCATE compliance_reviews, compliance_evidence_packs`);
+    }
+  });
+
   it('prunes rows past the window and keeps recent ones', async () => {
     // old + fresh health checks
     for (const [days, tag] of [

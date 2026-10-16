@@ -98,7 +98,7 @@ const sloScore = (e: SloEvaluation): number => {
   );
 };
 
-function evaluate(run: runs.LoadRun): { cfg: PlanConfig; evaluation: SloEvaluation } {
+export function evaluate(run: runs.LoadRun): { cfg: PlanConfig; evaluation: SloEvaluation } {
   const cfg = PlanConfigSchema.parse(run.snapshot.config);
   return {
     cfg,

@@ -12,6 +12,7 @@ import {
   CircleDot,
   Gauge,
   FlaskConical,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useSummary } from '@/lib/queries';
 import { api } from '@/lib/api';
@@ -28,6 +29,7 @@ const NAV = [
   { to: '/app/sla', label: 'SLA', Icon: Gauge },
   { to: '/app/reports', label: 'Reports', Icon: FileText },
   { to: '/app/load-tests', label: 'Load tests', Icon: FlaskConical },
+  { to: '/app/compliance', label: 'Compliance', Icon: ClipboardCheck },
   { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
 ];
 
