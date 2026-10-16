@@ -221,6 +221,10 @@ export async function authSetup(
       LT_TOKEN_USER: tokenUsername,
       LT_TOKEN_PASS: tokenPassword,
       LT_TOKEN_RESOURCE: c['tokenResource'] ?? 'ismartpay',
+      // Optional credential for a DIFFERENT account — enables the cross-account (BOLA) checks.
+      ...(c['tokenUsernameB'] && c['tokenPasswordB']
+        ? { LT_TOKEN_USER_B: c['tokenUsernameB'], LT_TOKEN_PASS_B: c['tokenPasswordB'] }
+        : {}),
       LT_TOKEN_BODY: substituteUuid(c['tokenBody'] ?? '{}', randomUUID()),
     },
   };

@@ -18,7 +18,11 @@ export interface CheckResult {
   title: string;
   controls: string[];
   status: CheckStatus;
+  /** OWASP API Security category, when the check belongs to the security suite. */
+  owasp?: string;
   assertions: Assertion[];
+  /** Advisory assertions that failed: reported, but they do not fail the check. */
+  warnings: number;
   durationMs: number;
   /** Per-call evidence for THIS check: ids and statuses only — no bodies, no secrets. */
   evidence: Exchange[];
@@ -31,6 +35,7 @@ export interface SuiteSummary {
   failed: number;
   errored: number;
   skipped: number;
+  warnings: number;
   assertions: { total: number; failed: number };
   verdict: 'PASS' | 'FAIL';
 }
@@ -47,6 +52,11 @@ export interface SuiteOptions {
   client: ClientOptions;
   /** Present only when the target is the simulator (class MOCK). */
   simBaseUrl?: string | undefined;
+  /** The checks to choose from (default: the correctness suite). */
+  pool?: Check[];
+  /** A credential for a different account, when one is configured (live) — the simulator derives its own. */
+  secondClient?: ClientOptions | undefined;
+  clientSecret?: string;
   /** Run only these checks (default: every applicable one). */
   only?: string[] | undefined;
   /** Run-unique token so references never collide with an earlier run. */
@@ -92,7 +102,12 @@ function simControl(base: string, record: (e: Exchange) => void): SimControl {
 const rec = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 
-function makeContext(api: ApiClient, sim: SimControl | null, opts: SuiteOptions): CheckContext {
+function makeContext(
+  api: ApiClient,
+  sim: SimControl | null,
+  opts: SuiteOptions,
+  second: ApiClient | null,
+): CheckContext {
   let n = 0;
   const receivers: WebhookReceiver[] = [];
   const secret = opts.webhookSecret ?? 'sim-webhook-secret';
@@ -120,6 +135,9 @@ function makeContext(api: ApiClient, sim: SimControl | null, opts: SuiteOptions)
   const ctx: CheckContext = {
     api,
     clientId: opts.client.clientId,
+    clientSecret: opts.client.clientSecret,
+    second,
+    clientFor: (id) => (sim ? new ApiClient({ ...opts.client, clientId: id }) : null),
     sim,
     webhookSecret: secret,
     settleTimeoutMs: settle,
@@ -185,30 +203,49 @@ function makeContext(api: ApiClient, sim: SimControl | null, opts: SuiteOptions)
   return ctx;
 }
 
-export const applicableChecks = (simulator: boolean, only?: string[]): Check[] =>
-  CHECKS.filter((c) => (only && only.length > 0 ? only.includes(c.id) : true)).filter(
-    (c) => simulator || c.requires.length === 0,
-  );
+export const applicableChecks = (
+  simulator: boolean,
+  only?: string[],
+  pool: Check[] = CHECKS,
+): Check[] =>
+  pool
+    .filter((c) => (only && only.length > 0 ? only.includes(c.id) : true))
+    .filter((c) => simulator || c.requires.length === 0);
 
 /** Runs the suite. Never throws for a failing check — failures are results. */
 export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
   const startedAt = new Date().toISOString();
+  const pool = opts.pool ?? CHECKS;
   const api = new ApiClient(opts.client);
   const sim = opts.simBaseUrl ? simControl(opts.simBaseUrl, (e) => api.exchanges.push(e)) : null;
-  const ctx = makeContext(api, sim, opts);
-  const chosen = applicableChecks(sim !== null, opts.only);
-  const skippedForMode = CHECKS.filter((c) =>
-    opts.only?.length ? opts.only.includes(c.id) : true,
-  ).filter((c) => !chosen.includes(c));
+  // A second account: the simulator accepts any client id; live needs a configured credential.
+  const second = sim
+    ? new ApiClient({ ...opts.client, clientId: `${opts.client.clientId}_b` }, api.exchanges)
+    : opts.secondClient
+      ? new ApiClient(opts.secondClient, api.exchanges)
+      : null;
+  const ctx = makeContext(api, sim, opts, second);
+  const chosen = applicableChecks(sim !== null, opts.only, pool);
+  const skippedForMode = pool
+    .filter((c) => (opts.only?.length ? opts.only.includes(c.id) : true))
+    .filter((c) => !chosen.includes(c));
   const results: CheckResult[] = [];
+
+  const base = (
+    c: Check,
+  ): Pick<CheckResult, 'id' | 'title' | 'controls' | 'owasp' | 'warnings'> => ({
+    id: c.id,
+    title: c.title,
+    controls: c.controls,
+    ...(c.owasp ? { owasp: c.owasp } : {}),
+    warnings: 0,
+  });
 
   for (const check of chosen) {
     const stop = (await opts.shouldStop?.()) ?? null;
     if (stop) {
       results.push({
-        id: check.id,
-        title: check.title,
-        controls: check.controls,
+        ...base(check),
         status: 'SKIPPED',
         assertions: [],
         durationMs: 0,
@@ -220,21 +257,30 @@ export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
     const from = api.exchanges.length;
     const t0 = Date.now();
     try {
-      const assertions = await check.run(ctx);
+      const out = await check.run(ctx);
+      if (!Array.isArray(out)) {
+        results.push({
+          ...base(check),
+          status: 'SKIPPED',
+          assertions: [],
+          durationMs: Date.now() - t0,
+          evidence: api.exchanges.slice(from),
+          note: out.skip,
+        });
+        continue;
+      }
+      const required = out.filter((a) => !a.advisory);
       results.push({
-        id: check.id,
-        title: check.title,
-        controls: check.controls,
-        status: assertions.every((a) => a.pass) ? 'PASS' : 'FAIL',
-        assertions,
+        ...base(check),
+        status: required.every((a) => a.pass) ? 'PASS' : 'FAIL',
+        warnings: out.filter((a) => a.advisory && !a.pass).length,
+        assertions: out,
         durationMs: Date.now() - t0,
         evidence: api.exchanges.slice(from),
       });
     } catch (err) {
       results.push({
-        id: check.id,
-        title: check.title,
-        controls: check.controls,
+        ...base(check),
         status: 'ERROR',
         assertions: [],
         durationMs: Date.now() - t0,
@@ -247,9 +293,7 @@ export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
 
   for (const c of skippedForMode) {
     results.push({
-      id: c.id,
-      title: c.title,
-      controls: c.controls,
+      ...base(c),
       status: 'SKIPPED',
       assertions: [],
       durationMs: 0,
@@ -277,6 +321,7 @@ export function summarize(results: CheckResult[]): SuiteSummary {
     failed,
     errored,
     skipped: count('SKIPPED'),
+    warnings: results.reduce((n, r) => n + r.warnings, 0),
     assertions: { total: all.length, failed: all.filter((a) => !a.pass).length },
     verdict: failed + errored === 0 && count('PASS') > 0 ? 'PASS' : 'FAIL',
   };

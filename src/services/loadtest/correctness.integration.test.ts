@@ -16,6 +16,7 @@ const { upsertTargetConfig, setKillSwitch } =
 const repo = await import('../../repositories/load-test-correctness.repo.js');
 const svc = await import('./correctness.service.js');
 const { CHECKS } = await import('../../loadtest/correctness/checks.js');
+const { SECURITY_CHECKS } = await import('../../loadtest/correctness/security.js');
 
 const actor = { userId: null, label: 'test:correctness' };
 const { app: simApp, sim } = createSimulatorApp();
@@ -97,6 +98,35 @@ describe.skipIf(!dbUp)('correctness suite as a queued run (DB + safety gate + si
     expect(stored).not.toContain('secret_cor_value');
     expect(stored).not.toMatch(/sim_[0-9a-f]{20}/);
   }, 180_000);
+
+  it('runs the OWASP security suite through the same queue, gate and worker', async () => {
+    // A correctness check id is not a security check id.
+    await expect(
+      svc.queueCorrectnessRun(mockTarget, ['idem.sequential-replay'], actor, 'security'),
+    ).rejects.toMatchObject({ statusCode: 422 });
+
+    const queued = await svc.queueCorrectnessRun(mockTarget, undefined, actor, 'security');
+    expect(queued.suite).toBe('security');
+    await svc.executeCorrectnessRun((await repo.claimNextCorrectnessRun('test-worker'))!, {
+      workerId: 'test-worker',
+    });
+
+    const done = (await repo.getCorrectnessRun(queued.id))!;
+    expect(done.status).toBe('COMPLETED');
+    expect(done.summary).toMatchObject({
+      verdict: 'PASS',
+      failed: 0,
+      errored: 0,
+      skipped: 0,
+      total: SECURITY_CHECKS.length,
+    });
+    expect(done.results!.every((r) => r.owasp?.startsWith('API'))).toBe(true);
+    expect(done.results!.every((r) => r.evidence.length > 0)).toBe(true);
+    expect(JSON.stringify(done)).not.toContain('secret_cor_value');
+
+    const list = await repo.listCorrectnessRuns({ suite: 'correctness' });
+    expect(list.some((r) => r.id === queued.id)).toBe(false); // suites stay separate
+  }, 240_000);
 
   it('runs a selected subset and rejects unknown check ids', async () => {
     await expect(

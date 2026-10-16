@@ -1,6 +1,6 @@
 # Fintech Load Testing & Compliance Assurance — Feature Plan (Phases 21–28)
 
-Status: **Phases 21–25 BUILT (2026-10-15/16); 26+ planned.** Continues numbering after Phases 12–20 (observability & reporting).
+Status: **Phases 21–26 BUILT (2026-10-15/16); 27–28 planned.** Open items: see `docs/load-testing-open-items.md`. Continues numbering after Phases 12–20 (observability & reporting).
 
 ## 1. Goal
 
@@ -327,6 +327,35 @@ Read from stgdocs.ismartghana.com (guides + per-endpoint reference). Source of t
 **API.** `GET /load-tests/correctness-checks`, `POST /load-tests/correctness-runs` (ADMIN/OPERATOR → 202 or 422 + safety violations), `GET /load-tests/correctness-runs[/:id]`.
 
 **API catalog.** `GET /load-tests/api-catalog` and `docs/api-load-test-catalog.md` (generated from `src/loadtest/contract/catalog.ts`): all 33 documented endpoints + 9 webhook events, each with permission, risk and load-test status (15 ready · 7 need data · 3 caution · 7 excluded). A test keeps it consistent with the 25 scenario packs. New read-only packs: payout/utility/transfer/checkout status polls, checkouts list, payout & utility fee quotes, utility products, settlements list/latest, events, recipient lookup, party lookup (caution: forwarded to the mobile-money provider).
+
+### Phase 26 — security / abuse-resilience suite (done, 17 checks)
+Aligned to the **OWASP API Security Top 10 (2023)**. It checks that defences *hold* under hostile-but-ordinary input; it is not exploit tooling: low volume (≤20 concurrent), no brute force, nothing destructive, and only against targets the safety gate has cleared. It reuses the correctness pipeline (same queue, worker, gate, kill switch, evidence format), selected with `suite: 'security'`.
+
+| OWASP | Check | What must hold |
+|---|---|---|
+| API1 BOLA | `bola.cross-account-access` | account B cannot read A's payments, its list excludes them, and "exists but not yours" is indistinguishable from "does not exist" |
+| API2 Auth | `auth.bogus-client-rejected` | unknown clients / wrong secrets never get a token; identical responses (no account enumeration) |
+| API2 Auth | `auth.token-expiry-enforced` | an expired token is refused (sim) |
+| API3 BOPLA | `bopla.mass-assignment-rejected` | a client cannot set `status`, `fee`, amounts or admin flags on create |
+| API3 BOPLA | `bopla.response-allowlist` | no secret/internal/ledger fields, no card-like values, no infrastructure material in responses |
+| API4 Resources | `resource.rate-limit-behaviour` | bursts → 429 + numeric `Retry-After`, never 5xx, recovers after waiting |
+| API4 Resources | `resource.payload-limits` | 600 KB bodies, 3000-deep nesting, 10k-char fields → clean 4xx, no hang, service healthy after |
+| API4 Resources | `resource.pagination-caps` | `limit=100000` refused or clamped to ≤100; nonsense limits → 4xx |
+| API5 Function authz | `authz.permission-enforced` | a read-only credential gets 403 on payout/collection/transfer (sim; live needs a read-only key) |
+| API6 Business flows | `flows.limits-bound-automation` | 15 rapid payouts stop at the daily limit; per-transaction limit enforced |
+| API7 SSRF | `ssrf.url-fields` | checkout URLs pointing at 169.254.169.254, localhost, 10.x, `file:`, `gopher:` are refused |
+| API8 Misconfig | `misconfig.headers-tls-cors` | no banners, no reflected CORS origin, TLS ≥1.2 and cert validity on https targets |
+| API8 Misconfig | `misconfig.error-hygiene` | errors are generic JSON: no stack traces, paths, SQL or connection strings |
+| API8 Misconfig | `misconfig.methods-and-debug-paths` | wrong methods refused; `/debug`, `/.env`, `/actuator`, … not served |
+| API9 Inventory | `inventory.undocumented-paths` | `/v0`, `/v2`, `/api/v1`, `/admin`, `/internal` return nothing |
+| API10 Consumption | `consumption.schema-conformance` | real responses match the documented contract (decimal-string amounts, error body) — catches vendor drift |
+| Injection robustness | `input.hostile-strings-inert` | SQL/XSS/JNDI/template/traversal/unicode strings: no 5xx, stored verbatim or refused, control chars refused |
+
+**Assertion levels.** A failed *required* assertion fails the check. A failed *advisory* assertion (a missing hardening header, or behaviour the vendor's docs leave unspecified) is a **warning**: counted in the summary, visible in the report, never hidden, but not verdict-changing.
+
+**Mutation-tested.** The simulator can plant 16 defect classes (BOLA, open token endpoint, non-expiring tokens, mass assignment, field leakage, no rate limit, no page cap, ignored permissions, ignored limits, internal-URL redirects, reflected CORS, server banner, stack traces, debug endpoints, legacy unauthenticated version, numeric-amount contract drift, crash on a quote). Each has a test that proves the matching check goes red and goes green when the defect is absent. The first run caught a defect in my own simulator (a flag that was never consulted).
+
+**Live vs simulator.** Simulator: all 17 run. Live sandbox: `auth.token-expiry-enforced` and `authz.permission-enforced` are simulator-only (SKIPPED); `bola.cross-account-access` needs a credential for a second account (`tokenUsernameB` / `tokenPasswordB` on the target) or is SKIPPED; wrong-secret attempts are never made against the REAL client id on a live identity service (lockout risk) — only bogus ids; `ssrf` and `flows` are advisory live. API: `GET /load-tests/security-checks`, `POST/GET /load-tests/security-runs[/:id]`. Safety-gate peak: 20 concurrent (fits the 25 rps sandbox ceiling).
 
 ### Open items
 1. **Ask iSmart:** sandbox rate limits; idempotency-key retention; collection `failureReason` values; whether wallet transfers have a test mode; permissions for a test key; whether `POST /v1/settlements` moves real funds in test; party-lookup tolerance.

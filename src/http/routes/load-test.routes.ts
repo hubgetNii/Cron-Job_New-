@@ -28,6 +28,7 @@ import { abortRun, createPlan, queueRun } from '../../services/loadtest/run.serv
 import { effectiveRps } from '../../domain/load-plan.js';
 import { CATALOG, catalogSummary } from '../../loadtest/contract/catalog.js';
 import { CHECKS } from '../../loadtest/correctness/checks.js';
+import { SECURITY_CHECKS } from '../../loadtest/correctness/security.js';
 import * as correctness from '../../repositories/load-test-correctness.repo.js';
 import { queueCorrectnessRun } from '../../services/loadtest/correctness.service.js';
 import * as dataSets from '../../repositories/load-test-data-sets.repo.js';
@@ -408,7 +409,7 @@ loadTestRouter.get('/load-tests/correctness-runs', canPlan, async (req: Request,
       limit: z.coerce.number().int().min(1).max(200).default(50),
     })
     .parse(req.query);
-  res.json({ data: await correctness.listCorrectnessRuns(q) });
+  res.json({ data: await correctness.listCorrectnessRuns({ ...q, suite: 'correctness' }) });
 });
 
 loadTestRouter.get(
@@ -417,6 +418,48 @@ loadTestRouter.get(
   async (req: Request, res: Response) => {
     const run = await correctness.getCorrectnessRun(idParam.parse(req.params.id));
     if (!run) throw new NotFoundError('Correctness run not found');
+    res.json({ data: run });
+  },
+);
+
+/* ── Security suite (Phase 26) ─────────────────────────────────────────── */
+
+/** OWASP API Security Top 10 (2023) checks the suite runs. */
+loadTestRouter.get('/load-tests/security-checks', canPlan, (_req: Request, res: Response) => {
+  res.json({
+    data: SECURITY_CHECKS.map((c) => ({
+      id: c.id,
+      title: c.title,
+      owasp: c.owasp,
+      controls: c.controls,
+      requires: c.requires,
+    })),
+  });
+});
+
+/** Queues the security suite; same safety gate and worker as every other run. */
+loadTestRouter.post('/load-tests/security-runs', canRun, async (req: Request, res: Response) => {
+  const body = correctnessBody.parse(req.body);
+  const run = await queueCorrectnessRun(body.apiId, body.checks, actorFromRequest(req), 'security');
+  res.status(202).json({ data: run });
+});
+
+loadTestRouter.get('/load-tests/security-runs', canPlan, async (req: Request, res: Response) => {
+  const q = z
+    .object({
+      apiId: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+    })
+    .parse(req.query);
+  res.json({ data: await correctness.listCorrectnessRuns({ ...q, suite: 'security' }) });
+});
+
+loadTestRouter.get(
+  '/load-tests/security-runs/:id',
+  canPlan,
+  async (req: Request, res: Response) => {
+    const run = await correctness.getCorrectnessRun(idParam.parse(req.params.id));
+    if (!run || run.suite !== 'security') throw new NotFoundError('Security run not found');
     res.json({ data: run });
   },
 );

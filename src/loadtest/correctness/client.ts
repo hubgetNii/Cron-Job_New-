@@ -38,17 +38,37 @@ export interface CallOptions {
   key?: string | undefined;
   /** `undefined` → use the client's token; `null` → send no Authorization; string → send that token. */
   token?: string | null | undefined;
+  /** Send this exact string as the body (for malformed-JSON and hostile-payload tests). */
+  rawBody?: string | undefined;
+  /** Extra request headers (lower-case names). */
+  headers?: Record<string, string> | undefined;
 }
 
 const asRecord = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 
 export class ApiClient {
-  readonly exchanges: Exchange[] = [];
+  readonly exchanges: Exchange[];
   private token: string | null = null;
   private tokenExp = 0;
 
-  constructor(private readonly opts: ClientOptions) {}
+  /** `sink` lets several clients append to one evidence list. */
+  constructor(
+    private readonly opts: ClientOptions,
+    sink?: Exchange[],
+  ) {
+    this.exchanges = sink ?? [];
+  }
+
+  get baseUrl(): string {
+    return this.opts.baseUrl;
+  }
+  get tokenUrl(): string {
+    return this.opts.tokenUrl;
+  }
+  get clientId(): string {
+    return this.opts.clientId;
+  }
 
   /** Fetches (or reuses) a bearer token, refreshing 60 s before its documented 5-minute expiry. */
   async getToken(force = false): Promise<string> {
@@ -97,10 +117,14 @@ export class ApiClient {
     else if (o.token !== null) headers['authorization'] = `Bearer ${o.token}`;
     if (o.key !== undefined) headers['idempotency-key'] = o.key;
     let body: string | undefined;
-    if (o.body !== undefined) {
+    if (o.rawBody !== undefined) {
+      body = o.rawBody;
+      headers['content-type'] = 'application/json';
+    } else if (o.body !== undefined) {
       body = JSON.stringify(o.body);
       headers['content-type'] = 'application/json';
     }
+    Object.assign(headers, o.headers);
 
     const started = Date.now();
     let res: Response | null = null;

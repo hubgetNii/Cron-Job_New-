@@ -462,6 +462,30 @@ describe.skipIf(!dbUp)('load-test safety foundation (Phase 21)', () => {
     expect(JSON.stringify(refused.body)).toContain('AUTH_');
   });
 
+  it('security suite endpoints: OWASP-labelled, role-gated, behind the safety gate', async () => {
+    const checks = await request(app).get('/api/v1/load-tests/security-checks').set(auth(operator));
+    expect(checks.status).toBe(200);
+    const list = checks.body.data as { id: string; owasp: string }[];
+    expect(list.length).toBeGreaterThanOrEqual(17);
+    expect(list.every((c) => /^API\d{1,2}:2023/.test(c.owasp))).toBe(true);
+    expect(list.map((c) => c.id)).toContain('bola.cross-account-access');
+    await request(app).get('/api/v1/load-tests/security-checks').set(auth(viewer)).expect(403);
+
+    await request(app)
+      .post('/api/v1/load-tests/security-runs')
+      .set(auth(viewer))
+      .send({ apiId: sandboxTarget })
+      .expect(403);
+    const refused = await request(app)
+      .post('/api/v1/load-tests/security-runs')
+      .set(auth(operator))
+      .send({ apiId: sandboxTarget });
+    expect(refused.status).toBe(422);
+    expect(JSON.stringify(refused.body)).toContain('AUTH_');
+    const runs = await request(app).get('/api/v1/load-tests/security-runs').set(auth(operator));
+    expect(runs.status).toBe(200);
+  });
+
   it('validates a data set without echoing offending values', async () => {
     const res = await request(app)
       .post('/api/v1/load-tests/data-sets/validate')

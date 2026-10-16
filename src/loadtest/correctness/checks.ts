@@ -18,6 +18,13 @@ export interface Assertion {
   name: string;
   pass: boolean;
   detail?: string;
+  /** A failed advisory assertion is a WARNING: reported, but it does not fail the check. */
+  advisory?: boolean;
+}
+
+/** Returned by a check that cannot run here (e.g. needs a second credential). Reported as SKIPPED. */
+export interface SkipResult {
+  skip: string;
 }
 
 export interface SimControl {
@@ -40,6 +47,11 @@ export interface CheckContext {
   api: ApiClient;
   /** The API credential id (also the simulator wallet id). */
   clientId: string;
+  clientSecret: string;
+  /** A credential belonging to a DIFFERENT account (simulator: derived; live: only if configured). */
+  second: ApiClient | null;
+  /** A fresh client for another credential id — simulator only (it accepts any id). */
+  clientFor(id: string): ApiClient | null;
   sim: SimControl | null;
   /** HTTP URL the simulator should deliver webhooks to is created per check via `receiver()`. */
   receiver(
@@ -68,19 +80,23 @@ export interface Check {
   /** Generic control tags, mapped to frameworks in Phase 28. */
   controls: string[];
   requires: 'simulator'[];
-  run(c: CheckContext): Promise<Assertion[]>;
+  /** OWASP API Security Top 10 (2023) category, for security checks. */
+  owasp?: string;
+  run(c: CheckContext): Promise<Assertion[] | SkipResult>;
 }
 
-const ok = (name: string, pass: boolean, detail?: string): Assertion => ({
+export const ok = (name: string, pass: boolean, detail?: string): Assertion => ({
   name,
   pass,
   ...(detail ? { detail } : {}),
 });
-const rec = (v: unknown): Record<string, unknown> =>
+export const rec = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
-const word = (v: unknown, fallback = 'timeout'): string => (typeof v === 'string' ? v : fallback);
-const errCode = (r: ApiResponse): string | undefined => str(rec(rec(r.body)['error'])['code']);
+export const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+export const word = (v: unknown, fallback = 'timeout'): string =>
+  typeof v === 'string' ? v : fallback;
+export const errCode = (r: ApiResponse): string | undefined =>
+  str(rec(rec(r.body)['error'])['code']);
 
 export const toPesewas = (v: unknown): number | null => {
   if (typeof v !== 'string' || !/^\d+\.\d{2}$/.test(v)) return null;

@@ -89,12 +89,53 @@ export const SimConfigSchema = z.object({
       baseDelayMs: z.number().int().min(1).default(1000),
     })
     .default({}),
-  /** Deliberately weak behaviours for the security suite (Phase 26). */
+  /** When strict, the token endpoint only accepts the listed client id → secret pairs. */
+  auth: z
+    .object({
+      strict: z.boolean().default(false),
+      clients: z.record(z.string(), z.string()).default({}),
+    })
+    .default({}),
+  /** Per-client permission allow-lists. A client absent from the map is unrestricted. */
+  permissions: z.record(z.string(), z.array(z.string())).default({}),
+  /** Deliberately weak behaviours for the security suite (Phase 26) — each one is a real defect class. */
   weak: z
     .object({
+      /** API1: any credential can read any payment. */
       bola: z.boolean().default(false),
+      /** API2: any bearer token is accepted. */
       acceptAnyToken: z.boolean().default(false),
+      /** API8: stack traces and internals in error bodies. */
       verboseErrors: z.boolean().default(false),
+      /** API3: internal fields leak into responses. */
+      leakFields: z.boolean().default(false),
+      /** API3: unknown request fields are accepted and applied (mass assignment). */
+      massAssignment: z.boolean().default(false),
+      /** API5: permission allow-lists are not enforced. */
+      ignorePermissions: z.boolean().default(false),
+      /** API4: the page-size cap is not enforced. */
+      ignorePageCaps: z.boolean().default(false),
+      /** API7: redirect URLs may point at internal addresses / odd schemes. */
+      acceptAnyUrl: z.boolean().default(false),
+      /** API8: CORS reflects any Origin with credentials; server banner is leaked. */
+      reflectCors: z.boolean().default(false),
+      leakBanner: z.boolean().default(false),
+      /** API8: debug endpoints are reachable. */
+      exposeDebug: z.boolean().default(false),
+      /** API9: a legacy, unauthenticated API version is still served. */
+      legacyVersions: z.boolean().default(false),
+      /** API2: the token endpoint issues tokens to unknown clients / wrong secrets. */
+      openTokenEndpoint: z.boolean().default(false),
+      /** API2: tokens never expire. */
+      tokensNeverExpire: z.boolean().default(false),
+      /** API4: no rate limiting at all. */
+      noRateLimit: z.boolean().default(false),
+      /** API6: payment limits are not enforced. */
+      ignoreLimits: z.boolean().default(false),
+      /** API10-side: amounts are emitted as JSON numbers instead of decimal strings (contract drift). */
+      numberAmounts: z.boolean().default(false),
+      /** Robustness: input containing a quote or angle bracket crashes the handler (5xx). */
+      crashOnQuote: z.boolean().default(false),
     })
     .default({}),
 });
@@ -226,6 +267,43 @@ const PRODUCTS = [
     account: { label: 'Smartcard number', hint: 'digits', pattern: '^[0-9]{1,32}$' },
   },
 ] as const;
+const PERMISSION_RULES: [RegExp, string][] = [
+  [/^POST \/collections$/, 'collections.write'],
+  [/^POST \/checkouts/, 'collections.write'],
+  [/^POST \/(payouts|payout-batches|utility-purchases)$/, 'disbursements.write'],
+  [/^POST \/transfers$/, 'wallettransfer.write'],
+  [/^GET \/(wallet|limits|transactions)$/, 'transactions.read'],
+];
+
+/** http(s) only, and never loopback / link-local / private ranges. */
+function isPublicHttpUrl(v: unknown): boolean {
+  if (typeof v !== 'string' || v.length > 2048) return false;
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal') || h === '::1')
+    return false;
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 169 && b === 254) ||
+      (a === 192 && b === 168) ||
+      (a === 172 && b >= 16 && b <= 31)
+    )
+      return false;
+  }
+  return true;
+}
+
 const KNOWN_HANDLES = new Set(['demo-merchant', 'acme-store']);
 
 /* ── Simulator ──────────────────────────────────────────────────────────── */
@@ -341,7 +419,7 @@ export class Simulator {
 
   takeRateToken(key: string): void {
     const { enabled, rps } = this.config.rateLimit;
-    if (!enabled) return;
+    if (!enabled || this.config.weak.noRateLimit) return;
     const now = Date.now();
     const b = this.buckets.get(key) ?? { tokens: rps, at: now };
     b.tokens = Math.min(rps, b.tokens + ((now - b.at) / 1000) * rps);
@@ -371,6 +449,14 @@ export class Simulator {
     const { client_id } = parsed.data;
     if (client_id.startsWith('live_'))
       throw new SimError('environment_mismatch', 'key belongs to the live environment');
+    // Unknown client and wrong secret are deliberately indistinguishable.
+    if (
+      this.config.auth.strict &&
+      !this.config.weak.openTokenEndpoint &&
+      this.config.auth.clients[client_id] !== parsed.data.client_secret
+    ) {
+      throw new SimError('unauthenticated', 'invalid client credentials');
+    }
     const token = `sim_${randomBytes(18).toString('hex')}`;
     const ttl = this.config.tokenTtlSeconds;
     this.tokens.set(token, { cred: client_id, exp: Date.now() + ttl * 1000 });
@@ -384,7 +470,7 @@ export class Simulator {
     if (!token) throw new SimError('unauthenticated', 'token missing');
     const t = this.tokens.get(token);
     if (t) {
-      if (Date.now() >= t.exp) {
+      if (!this.config.weak.tokensNeverExpire && Date.now() >= t.exp) {
         this.counters.tokenExpiries++;
         throw new SimError('unauthenticated', 'token expired');
       }
@@ -395,6 +481,17 @@ export class Simulator {
       return 'anonymous';
     }
     throw new SimError('unauthenticated', 'token invalid');
+  }
+
+  /** API5: function-level authorization. Clients without an entry are unrestricted. */
+  assertPermission(cred: string, method: string, path: string): void {
+    if (this.config.weak.ignorePermissions) return;
+    const granted = this.config.permissions[cred];
+    if (!granted) return;
+    const need = PERMISSION_RULES.find(([re]) => re.test(`${method} ${path}`))?.[1];
+    if (need && !granted.includes(need)) {
+      throw new SimError('forbidden', 'the credential lacks the required permission');
+    }
   }
 
   /* ── idempotency ──────────────────────────────────────────────────────── */
@@ -484,6 +581,7 @@ export class Simulator {
   }
 
   private checkLimits(cred: string, amount: number, direction: 'in' | 'out'): void {
+    if (this.config.weak.ignoreLimits) return;
     const per = parseAmount(this.config.limits.perTransaction) ?? Infinity;
     const daily = parseAmount(this.config.limits.daily) ?? Infinity;
     if (amount > per)
@@ -577,7 +675,7 @@ export class Simulator {
     const pe = applyFee(tx.amount, tx.fee, tx.feeBearer);
     return {
       reference: tx.reference,
-      amount: fmt(tx.amount),
+      amount: this.config.weak.numberAmounts ? tx.amount / 100 : fmt(tx.amount),
       currency: 'GHS',
       status: tx.status,
       ...(tx.provider ? { provider: tx.provider } : {}),
@@ -592,6 +690,13 @@ export class Simulator {
       channel: 'api',
       ...(tx.settlementStatus ? { settlementStatus: tx.settlementStatus } : {}),
       reconciliation: { status: 'unchecked' },
+      ...(this.config.weak.leakFields
+        ? {
+            internalId: tx.id,
+            ledgerShard: 'ledger-db-03',
+            providerRaw: { upstreamRef: tx.id, party: tx.party },
+          }
+        : {}),
     };
   }
 
@@ -724,8 +829,14 @@ export class Simulator {
   }
 
   async createPayout(cred: string, body: unknown): Promise<Reply> {
-    const r = this.parse(PayoutRequestSchema, body);
+    const r = this.parse(
+      this.config.weak.massAssignment ? PayoutRequestSchema.passthrough() : PayoutRequestSchema,
+      body,
+    );
     this.provider(r.provider);
+    if (this.config.weak.crashOnQuote && /['<]/.test(r.note ?? '')) {
+      throw new Error('unhandled: unexpected token in query near "' + (r.note ?? '') + '"');
+    }
     const amount = this.amountOf(r.amount);
     const hash = hashOf(body);
     const dup = this.existing('payout', cred, r.reference, hash);
@@ -743,6 +854,12 @@ export class Simulator {
       hash,
       r.note,
     );
+    if (this.config.weak.massAssignment) {
+      // The defect: client-supplied fields overwrite server-owned state.
+      const extra = body as Record<string, unknown>;
+      if (typeof extra['status'] === 'string') tx.status = extra['status'];
+      if (typeof extra['fee'] === 'string') tx.fee = parseAmount(extra['fee']) ?? tx.fee;
+    }
     const payer = applyFee(amount, fee, tx.feeBearer).payerAmount;
     await this.debit(cred, payer, r.reference, 'payout_reserve', true);
     this.register(tx);
@@ -1101,6 +1218,14 @@ export class Simulator {
         .passthrough(),
       body,
     );
+    if (!this.config.weak.acceptAnyUrl) {
+      for (const f of ['successUrl', 'cancelUrl'] as const) {
+        const v = (b as Record<string, unknown>)[f];
+        if (v !== undefined && v !== null && !isPublicHttpUrl(v)) {
+          throw new SimError('invalid_input', `${f} must be a public http(s) URL`);
+        }
+      }
+    }
     const key = `${cred}:${b.reference}`;
     if (this.checkouts.has(key))
       throw new SimError('checkout_reference_taken', 'reference already used');

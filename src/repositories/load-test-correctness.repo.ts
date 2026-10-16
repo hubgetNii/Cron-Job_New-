@@ -2,6 +2,8 @@ import { query } from '../lib/db.js';
 import type { LoadEnvironmentClass, LoadRunStatus } from '../domain/enums.js';
 import type { CheckResult, SuiteSummary } from '../loadtest/correctness/suite.js';
 
+export type SuiteKind = 'correctness' | 'security';
+
 type Row = Record<string, unknown>;
 const iso = (v: unknown): string | null => (v ? (v as Date).toISOString() : null);
 
@@ -9,6 +11,7 @@ export interface CorrectnessRun {
   id: string;
   apiId: string;
   status: LoadRunStatus;
+  suite: SuiteKind;
   mode: 'simulator' | 'live' | null;
   effectiveClass: LoadEnvironmentClass | null;
   selectedChecks: string[];
@@ -26,6 +29,7 @@ const toRun = (r: Row): CorrectnessRun => ({
   id: r['id'] as string,
   apiId: r['api_id'] as string,
   status: r['status'] as LoadRunStatus,
+  suite: r['suite'] as SuiteKind,
   mode: (r['mode'] as 'simulator' | 'live' | null) ?? null,
   effectiveClass: (r['effective_class'] as LoadEnvironmentClass | null) ?? null,
   selectedChecks: r['selected_checks'] as string[],
@@ -44,11 +48,18 @@ export async function createCorrectnessRun(input: {
   checks: string[];
   effectiveClass: LoadEnvironmentClass | null;
   requestedBy: string | null;
+  suite?: SuiteKind;
 }): Promise<CorrectnessRun> {
   const { rows } = await query<Row>(
-    `INSERT INTO load_test_correctness_runs (api_id, selected_checks, effective_class, requested_by)
-     VALUES ($1,$2,$3,$4) RETURNING *`,
-    [input.apiId, input.checks, input.effectiveClass, input.requestedBy],
+    `INSERT INTO load_test_correctness_runs (api_id, selected_checks, effective_class, requested_by, suite)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [
+      input.apiId,
+      input.checks,
+      input.effectiveClass,
+      input.requestedBy,
+      input.suite ?? 'correctness',
+    ],
   );
   return toRun(rows[0]!);
 }
@@ -60,12 +71,14 @@ export async function getCorrectnessRun(id: string): Promise<CorrectnessRun | nu
 
 export async function listCorrectnessRuns(filter: {
   apiId?: string | undefined;
+  suite?: SuiteKind | undefined;
   limit?: number | undefined;
 }): Promise<CorrectnessRun[]> {
   const { rows } = await query<Row>(
-    `SELECT * FROM load_test_correctness_runs WHERE ($1::uuid IS NULL OR api_id = $1)
-     ORDER BY queued_at DESC LIMIT $2`,
-    [filter.apiId ?? null, Math.min(filter.limit ?? 50, 200)],
+    `SELECT * FROM load_test_correctness_runs
+      WHERE ($1::uuid IS NULL OR api_id = $1) AND ($2::text IS NULL OR suite = $2)
+      ORDER BY queued_at DESC LIMIT $3`,
+    [filter.apiId ?? null, filter.suite ?? null, Math.min(filter.limit ?? 50, 200)],
   );
   return rows.map(toRun);
 }

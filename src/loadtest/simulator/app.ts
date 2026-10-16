@@ -25,6 +25,27 @@ export function createSimulatorApp(sim: Simulator = new Simulator()): {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
+  // Deliberately weak, toggled per request so a check can flip them on a live simulator.
+  app.use((req, res, next) => {
+    if (sim.config.weak.leakBanner) {
+      res.setHeader('Server', 'sim-server/1.2.3 (Ubuntu 18.04)');
+      res.setHeader('X-Powered-By', 'Express 4.17.1');
+    }
+    if (sim.config.weak.reflectCors && req.headers.origin) {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    next();
+  });
+  app.get(['/debug/vars', '/actuator/env', '/.env'], (_req, res, next) => {
+    if (!sim.config.weak.exposeDebug) return next();
+    res.json({ env: { DATABASE_URL: 'postgres://app:hunter2@db.internal/ledger' } });
+  });
+  app.get('/v0/wallet', (_req, res, next) => {
+    if (!sim.config.weak.legacyVersions) return next();
+    res.json({ items: [{ name: 'main', balances: { GHS: '999999.00' } }] }); // legacy: no auth
+  });
+
   /* ── control plane ───────────────────────────────────────────────────── */
   app.get('/__sim/config', (_req, res) => void res.json({ data: sim.config }));
   app.put('/__sim/config', (req, res) => void res.json({ data: sim.patchConfig(req.body) }));
@@ -75,6 +96,7 @@ export function createSimulatorApp(sim: Simulator = new Simulator()): {
     try {
       const cred = sim.authenticate(req.header('authorization'));
       sim.takeRateToken(`cred:${cred}`);
+      sim.assertPermission(cred, req.method, req.path);
       res.locals['cred'] = cred;
       next();
     } catch (e) {
@@ -176,7 +198,9 @@ export function createSimulatorApp(sim: Simulator = new Simulator()): {
           .enum(['collection', 'payout', 'settlement', 'utility', 'wallet_transfer'])
           .optional(),
         status: z.string().max(64).optional(),
-        limit: z.coerce.number().int().min(1).max(100).default(50),
+        limit: sim.config.weak.ignorePageCaps
+          ? z.coerce.number().int().min(1).default(50)
+          : z.coerce.number().int().min(1).max(100).default(50),
         cursor: z.string().max(512).optional(),
       })
       .safeParse(req.query);
@@ -209,8 +233,17 @@ export function createSimulatorApp(sim: Simulator = new Simulator()): {
       res.status(err.status).json(err.body);
       return;
     }
+    if ((err as { type?: string }).type === 'entity.too.large') {
+      res
+        .status(413)
+        .json({ error: { code: 'invalid_input', message: 'request body is too large' } });
+      return;
+    }
     if (err instanceof z.ZodError || err instanceof SyntaxError) {
-      res.status(400).json({ error: { code: 'invalid_input', message: 'request is malformed' } });
+      const detail = sim.config.weak.verboseErrors && err instanceof Error ? err.stack : undefined;
+      res
+        .status(400)
+        .json({ error: { code: 'invalid_input', message: detail ?? 'request is malformed' } });
       return;
     }
     const leak = sim.config.weak.verboseErrors && err instanceof Error ? err.stack : undefined;
