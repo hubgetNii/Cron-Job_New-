@@ -14,6 +14,7 @@ import {
   claimNextCorrectnessRun,
   recoverStaleCorrectnessRuns,
 } from '../../repositories/load-test-correctness.repo.js';
+import { tickSchedules } from '../../services/loadtest/schedule.service.js';
 import { executeCorrectnessRun } from '../../services/loadtest/correctness.service.js';
 
 /**
@@ -25,6 +26,7 @@ const log = componentLogger('loadtest-worker');
 const workerId = `${hostname()}-${process.pid}`;
 let stopping = false;
 let currentRunId: string | null = null;
+let lastScheduleTick = 0;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -54,6 +56,11 @@ async function main(): Promise<void> {
       if (!env().LOAD_TEST_ENABLED) {
         await sleep(env().LOAD_TEST_WORKER_POLL_MS);
         continue;
+      }
+      if (Date.now() - lastScheduleTick >= 30_000) {
+        lastScheduleTick = Date.now();
+        const fired = await tickSchedules();
+        if (fired > 0) log.info({ fired }, 'queued scheduled suites');
       }
       const run = await claimNextRun(workerId);
       if (!run) {

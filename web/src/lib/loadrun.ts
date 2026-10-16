@@ -95,6 +95,20 @@ export interface PlanParams {
   maxVus?: number;
 }
 
+export interface ScheduleInfo {
+  id: string;
+  apiId: string;
+  targetName: string | null;
+  suite: 'correctness' | 'security';
+  cron: string;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  lastRunId: string | null;
+  lastOutcome: 'QUEUED' | 'REFUSED' | 'SKIPPED_BUSY' | 'ERROR' | null;
+  lastMessage: string | null;
+}
+
 export const isLive = (s: RunStatus): boolean =>
   s === 'QUEUED' || s === 'PREFLIGHT' || s === 'RUNNING';
 
@@ -125,6 +139,15 @@ export const runApi = {
     post<DataSetInfo & { caveat: string | null }>(`/load-tests/runs/${runId}/harvest-references`, {
       limit,
     }),
+  schedules: () => req<Wrapped<ScheduleInfo[]>>('/load-tests/schedules').then((r) => r.data),
+  saveSchedule: (apiId: string, suite: ScheduleInfo['suite'], cron: string) =>
+    post<ScheduleInfo>('/load-tests/schedules', { apiId, suite, cron }),
+  setSchedule: (id: string, enabled: boolean) =>
+    req<Wrapped<ScheduleInfo>>(`/load-tests/schedules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }).then((r) => r.data),
+  deleteSchedule: (id: string) => req<unknown>(`/load-tests/schedules/${id}`, { method: 'DELETE' }),
   abort: (runId: string, reason: string) =>
     post<LoadRunInfo>(`/load-tests/runs/${runId}/abort`, { reason }),
   runs: () => req<Wrapped<LoadRunInfo[]>>('/load-tests/runs?limit=15').then((r) => r.data),

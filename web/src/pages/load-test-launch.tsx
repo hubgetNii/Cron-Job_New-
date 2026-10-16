@@ -395,6 +395,170 @@ function HarvestButton({ runId }: { runId: string }) {
   );
 }
 
+const CADENCES: [string, string][] = [
+  ['Every 6 hours', '0 */6 * * *'],
+  ['Daily at 03:00', '0 3 * * *'],
+  ['Weekly, Monday 03:00', '0 3 * * 1'],
+];
+const OUTCOME_TEXT: Record<string, string> = {
+  QUEUED: 'Queued',
+  REFUSED: 'Refused by safety gate',
+  SKIPPED_BUSY: 'Skipped (previous still running)',
+  ERROR: 'Error',
+};
+
+function SchedulesCard({
+  targets,
+  canRun,
+}: {
+  targets: { id: string; name: string }[];
+  canRun: boolean;
+}) {
+  const qc = useQueryClient();
+  const { data = [] } = useQuery({
+    queryKey: ['lt-schedules'],
+    queryFn: runApi.schedules,
+    refetchInterval: 30_000,
+  });
+  const refresh = (): void => void qc.invalidateQueries({ queryKey: ['lt-schedules'] });
+  const [api, setApi] = useState('');
+  const [suiteKind, setSuiteKind] = useState<'correctness' | 'security'>('correctness');
+  const [cron, setCron] = useState(CADENCES[1]![1]);
+  const apiId = api || targets[0]?.id || '';
+  const save = useMutation({
+    mutationFn: () => runApi.saveSchedule(apiId, suiteKind, cron),
+    onSuccess: refresh,
+  });
+  const toggle = useMutation({
+    mutationFn: (v: { id: string; enabled: boolean }) => runApi.setSchedule(v.id, v.enabled),
+    onSuccess: refresh,
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => runApi.deleteSchedule(id),
+    onSuccess: refresh,
+  });
+  const field =
+    'h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-2 text-sm';
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Scheduled regression</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Re-runs the correctness and security suites on a cadence so test evidence — and the
+          compliance matrix built on it — never goes stale. Every scheduled run passes the same
+          safety gate as a manual one, and load tests are never scheduled. Needs the worker running.
+        </p>
+        <Table>
+          <THead>
+            <TR>
+              <TH>Service</TH>
+              <TH>Suite</TH>
+              <TH>Cadence</TH>
+              <TH>Next</TH>
+              <TH>Last</TH>
+              <TH />
+            </TR>
+          </THead>
+          <TBody>
+            {data.map((s) => (
+              <TR key={s.id} className={s.enabled ? '' : 'opacity-60'}>
+                <TD className="text-sm">{s.targetName}</TD>
+                <TD className="text-sm">{s.suite}</TD>
+                <TD className="font-mono text-xs">{s.cron}</TD>
+                <TD className="whitespace-nowrap text-xs">
+                  {s.enabled ? new Date(s.nextRunAt).toLocaleString() : 'paused'}
+                </TD>
+                <TD className="text-xs">
+                  {s.lastOutcome ? (
+                    <span title={s.lastMessage ?? undefined}>
+                      {OUTCOME_TEXT[s.lastOutcome]} ·{' '}
+                      {s.lastRunAt ? new Date(s.lastRunAt).toLocaleDateString() : ''}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </TD>
+                <TD className="space-x-3 whitespace-nowrap text-xs">
+                  {canRun && (
+                    <button
+                      className="underline"
+                      onClick={() => toggle.mutate({ id: s.id, enabled: !s.enabled })}
+                    >
+                      {s.enabled ? 'Pause' : 'Resume'}
+                    </button>
+                  )}
+                  {canRun && (
+                    <button className="underline" onClick={() => del.mutate(s.id)}>
+                      Delete
+                    </button>
+                  )}
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+        {data.length === 0 && (
+          <p className="text-sm text-[var(--color-text-faint)]">Nothing scheduled.</p>
+        )}
+        {canRun && (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={field}
+              value={apiId}
+              onChange={(e) => setApi(e.target.value)}
+              aria-label="Service"
+            >
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className={field}
+              value={suiteKind}
+              onChange={(e) => setSuiteKind(e.target.value as 'correctness' | 'security')}
+              aria-label="Suite"
+            >
+              <option value="correctness">Money correctness</option>
+              <option value="security">Security</option>
+            </select>
+            <select
+              className={field}
+              value={CADENCES.some(([, c]) => c === cron) ? cron : ''}
+              onChange={(e) => e.target.value && setCron(e.target.value)}
+              aria-label="Cadence"
+            >
+              {CADENCES.map(([l, c]) => (
+                <option key={c} value={c}>
+                  {l}
+                </option>
+              ))}
+              <option value="">Custom…</option>
+            </select>
+            <input
+              className={`${field} w-40 font-mono`}
+              value={cron}
+              onChange={(e) => setCron(e.target.value)}
+              aria-label="Cron expression"
+            />
+            <Button size="sm" disabled={!apiId || save.isPending} onClick={() => save.mutate()}>
+              Schedule
+            </Button>
+          </div>
+        )}
+        {[save.error, toggle.error, del.error].filter(Boolean).map((e, i) => (
+          <p key={i} className="text-sm text-[var(--color-down)]">
+            {errText(e)}
+          </p>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function SuiteRunsTable({ rows }: { rows: SuiteRunInfo[] }) {
   return (
     <Table>
@@ -631,6 +795,7 @@ export function LoadTestLaunchPage() {
           )}
         </CardContent>
       </Card>
+      <SchedulesCard targets={targets} canRun={canRun} />
       <Card>
         <CardHeader>
           <CardTitle>Recent correctness and security runs</CardTitle>

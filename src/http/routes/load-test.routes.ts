@@ -23,6 +23,12 @@ import {
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { LOAD_PROFILES, LOAD_RUN_STATUSES } from '../../domain/enums.js';
 import { PlanConfigSchema, peakRps } from '../../domain/load-plan.js';
+import {
+  createSchedule,
+  removeSchedule,
+  setScheduleEnabled,
+} from '../../services/loadtest/schedule.service.js';
+import { listSchedules } from '../../repositories/load-test-schedules.repo.js';
 import { harvestReferences } from '../../services/loadtest/harvest.service.js';
 import * as runs from '../../repositories/load-test-runs.repo.js';
 import { abortRun, createPlan, queueRun } from '../../services/loadtest/run.service.js';
@@ -297,11 +303,9 @@ loadTestRouter.post(
     const { limit } = z
       .object({ limit: z.number().int().min(1).max(2000).default(500) })
       .parse(req.body ?? {});
-    res
-      .status(201)
-      .json({
-        data: await harvestReferences(idParam.parse(req.params.id), limit, actorFromRequest(req)),
-      });
+    res.status(201).json({
+      data: await harvestReferences(idParam.parse(req.params.id), limit, actorFromRequest(req)),
+    });
   },
 );
 
@@ -585,3 +589,32 @@ loadTestRouter.get(
     );
   },
 );
+
+/* ── Scheduled regression suites (B5/B13) ──────────────────────────────── */
+
+loadTestRouter.get('/load-tests/schedules', canView, async (_req: Request, res: Response) => {
+  res.json({ data: await listSchedules() });
+});
+
+loadTestRouter.post('/load-tests/schedules', canRun, async (req: Request, res: Response) => {
+  const body = z
+    .object({
+      apiId: z.string().uuid(),
+      suite: z.enum(['correctness', 'security']),
+      cron: z.string().min(9).max(100),
+    })
+    .parse(req.body);
+  res.status(201).json({ data: await createSchedule(body, actorFromRequest(req)) });
+});
+
+loadTestRouter.patch('/load-tests/schedules/:id', canRun, async (req: Request, res: Response) => {
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  res.json({
+    data: await setScheduleEnabled(idParam.parse(req.params.id), enabled, actorFromRequest(req)),
+  });
+});
+
+loadTestRouter.delete('/load-tests/schedules/:id', canRun, async (req: Request, res: Response) => {
+  await removeSchedule(idParam.parse(req.params.id), actorFromRequest(req));
+  res.status(204).end();
+});
