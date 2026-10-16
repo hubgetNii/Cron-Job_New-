@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+#
+# Load-test worker image: the compiled Node worker + the k6 binary. Runs on a
+# dedicated VM, NOT on the monitor host or a laptop. See docs/loadtest-worker-runbook.md.
+#
+#   docker build -f Dockerfile.loadtest-worker -t cronmon-loadtest-worker .
+
+ARG K6_VERSION=2.3.0
+
+# ---- k6 binary (pinned) ------------------------------------------------------
+FROM grafana/k6:${K6_VERSION} AS k6
+
+# ---- build stage -------------------------------------------------------------
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN npm run build && npm prune --omit=dev
+
+# ---- runtime stage -----------------------------------------------------------
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+RUN apk add --no-cache dumb-init
+COPY --from=k6 /usr/bin/k6 /usr/local/bin/k6
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/package.json ./package.json
+
+USER node
+ENTRYPOINT ["dumb-init", "--"]
+# SIGTERM aborts the active run cleanly (the worker requests an abort and waits up to 25 s).
+STOPSIGNAL SIGTERM
+CMD ["node", "dist/loadtest/worker/main.js"]

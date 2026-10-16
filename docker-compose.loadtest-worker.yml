@@ -1,0 +1,27 @@
+# Load-test worker for a DEDICATED VM (never the monitor host, never a laptop).
+#
+#   cp .env.loadtest-worker.example .env.loadtest-worker   # fill in, chmod 600
+#   docker compose -f docker-compose.loadtest-worker.yml up -d --build
+#
+# Full runbook: docs/loadtest-worker-runbook.md
+name: cronmon-loadtest-worker
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.loadtest-worker
+    restart: unless-stopped
+    env_file: .env.loadtest-worker
+    init: false # dumb-init is already the entrypoint
+    stop_grace_period: 40s # lets an active run record an abort before the container dies
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m # k6 scripts and data files are rendered here
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 3g
+    logging:
+      driver: json-file
+      options: { max-size: '20m', max-file: '5' }

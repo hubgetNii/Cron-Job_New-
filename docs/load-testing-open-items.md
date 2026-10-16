@@ -22,8 +22,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
-| B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
-| B8 | Runner auth beyond `NONE` / `OAUTH2` (API key, bearer, custom header) | C | Fails with a clear message today. |
 | B9 | Live-mode webhook receiver deployment for the correctness suite | B | Depends on A4. |
 | B10 | Monitoring the iSmart developer API itself in the cron monitor needs OAuth2 `form` mode in the health-check token cache (it only does Basic) | C | Only if you want to monitor, not just load-test, that API. |
 | B13 | **Compliance follow-ups**: optional pack signing with a managed key (hash is recorded today, not signed), second-person pack approval | C | Scheduled evidence refresh is done (D11). |
@@ -55,3 +53,5 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D9 | **Reference harvesting** (was B6): `POST /load-tests/runs/:id/harvest-references` rebuilds the references a finished run created (`LT-<salt>-<n>`) into a data set for the status-poll packs; dashboard "Save references" button; verified end-to-end with real k6 (every lookup found its collection). Caveat: failed iterations were never created, so a run with failures warns that some lookups may 404 | B6, 2026-10-16 |
 | D10 | **Side-by-side run comparison** (was B11): `/app/load-tests/compare` — baseline vs newer load run, p50/p95/p99, errors, throughput with 5% noise band, SLO checks side by side, warns when the runs are not like for like (profile, shape, scenario, environment, saturated generator). The scheduled-regression view moves into B5 | B11, 2026-10-16 |
 | D11 | **Scheduled regression** (was B5, part of B13): correctness and security suites on a cron cadence (hourly floor), via the worker; same safety gate as a manual run, skip-if-busy, no catch-up bursts, load tests never scheduled; dashboard card on the Run page | B5, 2026-10-16 |
+| D12 | **Worker packaging** (was B4): `Dockerfile.loadtest-worker` (pinned k6 2.3.0, non-root), `docker-compose.loadtest-worker.yml` (read-only fs, no capabilities), env template, `docs/loadtest-worker-runbook.md`. Built and smoke-tested locally; the Hetzner VM itself is still A5 | B4, 2026-10-16 |
+| D13 | **Static auth types** (was B8): load runs now authenticate with API key (header or query), bearer, basic and custom-header targets as well as OAuth2/none; credentials reach k6 only through env; verified with real k6 against a capture server. The correctness/security suites remain iSmartPay-OAuth specific | B8, 2026-10-16 |

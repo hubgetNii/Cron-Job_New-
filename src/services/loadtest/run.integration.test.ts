@@ -223,6 +223,61 @@ describe.skipIf(!dbUp || !k6Up)('load-test runner (real k6 + contract-accurate s
     expect(polled.summary!.statusCounts['200']).toBe(polled.summary!.totalRequests);
   }, 150_000);
 
+  it('fixed credentials (API key header, bearer, query key) reach every request and no token handshake happens', async () => {
+    const seen: { key?: string; auth?: string; q?: string }[] = [];
+    const echo = createServer((req, res) => {
+      const u = new URL(req.url ?? '/', 'http://x');
+      seen.push({
+        key: req.headers['x-test-key'] as string | undefined,
+        auth: req.headers['authorization'],
+        q: u.searchParams.get('api_key') ?? undefined,
+      });
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    });
+    await new Promise<void>((r) => echo.listen(0, '127.0.0.1', r));
+    const echoOrigin = `http://127.0.0.1:${(echo.address() as AddressInfo).port}`;
+    try {
+      const cases: [string, Record<string, string>, (x: (typeof seen)[number]) => boolean][] = [
+        ['API_KEY', { header: 'X-Test-Key', value: 'k-123' }, (x) => x.key === 'k-123'],
+        ['BEARER', { token: 'tok-abc' }, (x) => x.auth === 'Bearer tok-abc'],
+        ['API_KEY', { query: 'api_key', value: 'qk-9' }, (x) => x.q === 'qk-9'],
+      ];
+      for (const [type, creds, ok] of cases) {
+        seen.length = 0;
+        const { rows } = await query<{ id: string }>(
+          `INSERT INTO monitored_apis
+             (name, endpoint_class, severity_default, url, frequency_cron, environment, authentication_type, encrypted_credentials)
+           VALUES ($1, 'internal', 'LOW', $2, '*/5 * * * *', 'sandbox', $3, $4) RETURNING id`,
+          [
+            `lt-int-static-${type}-${Object.keys(creds)[0]}`,
+            echoOrigin,
+            type,
+            JSON.stringify(encryptCredentials(creds)),
+          ],
+        );
+        await upsertTargetConfig(rows[0]!.id, 'MOCK', false, null);
+        const run = await queueAndClaim(
+          getPlan({
+            profile: 'SMOKE',
+            path: '/ping',
+            targetRps: 5,
+            durationSeconds: 10,
+            maxVus: 10,
+          }),
+          rows[0]!.id,
+        );
+        await svc.executeRun(run, { workerId: 'test-worker' });
+        const done = await finished(run.id);
+        expect(done.status).toBe('COMPLETED');
+        expect(done.summary!.authRequests).toBe(0);
+        expect(seen.length).toBeGreaterThanOrEqual(5);
+        expect(seen.every(ok), `${type} ${JSON.stringify(Object.keys(creds))}`).toBe(true);
+      }
+    } finally {
+      await new Promise((r) => echo.close(r));
+    }
+  }, 150_000);
+
   it('payout-batch pack: $repeat expands to unique items and the fan-out is real', async () => {
     const run = await packRun('payout-batch-telecel', { batchSize: 5 });
     expect(run.snapshot.config.fanout).toBe(5);

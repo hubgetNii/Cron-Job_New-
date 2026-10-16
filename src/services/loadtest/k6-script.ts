@@ -1,6 +1,7 @@
 import { buildStages, peakRps, type PlanConfig } from '../../domain/load-plan.js';
 
-export type AuthMode = 'none' | 'basic' | 'form';
+/** `static` = fixed API key / bearer / basic / custom header, injected from env on every request. */
+export type AuthMode = 'none' | 'basic' | 'form' | 'static';
 
 export interface ScriptInput {
   plan: PlanConfig;
@@ -62,6 +63,9 @@ ${hasData ? "import { SharedArray } from 'k6/data';" : ''}
 
 const CFG = ${JSON.stringify(cfg)};
 const SALT = __ENV.LT_RUN_SALT || '00000000';
+const NO_TOKEN = CFG.authMode === 'none' || CFG.authMode === 'static';
+const STATIC_HEADERS = CFG.authMode === 'static' ? JSON.parse(__ENV.LT_STATIC_HEADERS || '{}') : {};
+const STATIC_QUERY = CFG.authMode === 'static' ? JSON.parse(__ENV.LT_STATIC_QUERY || '{}') : {};
 const DATA = ${hasData ? "new SharedArray('data', function () { return JSON.parse(open('./data.json')); })" : '[]'};
 
 http.setResponseCallback(http.expectedStatuses(...CFG.expectedStatuses));
@@ -114,7 +118,7 @@ function fetchToken() {
 }
 
 export function setup() {
-  return CFG.authMode === 'none' ? { token: null, exp: 0, ttl: 0 } : fetchToken();
+  return NO_TOKEN ? { token: null, exp: 0, ttl: 0 } : fetchToken();
 }
 
 // Per-VU token cache. Refresh 45–75 s before expiry (jitter spreads the VUs out),
@@ -128,7 +132,7 @@ let tokenExp = 0;
 let tokenInit = false;
 
 function ensureToken(data) {
-  if (CFG.authMode === 'none') return;
+  if (NO_TOKEN) return;
   const now = Date.now();
   if (!tokenInit) { token = data.token; tokenExp = data.exp - skew(data.ttl); tokenInit = true; }
   if (now >= tokenExp) {
@@ -210,14 +214,19 @@ export default function (data) {
   }
   if (CFG.idempotencyHeader && CFG.method !== 'GET') headers[CFG.idempotencyHeader] = ctx.idem;
   if (token) headers['Authorization'] = 'Bearer ' + token;
+  const sk = Object.keys(STATIC_HEADERS);
+  for (let i = 0; i < sk.length; i++) headers[sk[i]] = STATIC_HEADERS[sk[i]];
+  let url = fill(CFG.url, ctx, true);
+  const qk = Object.keys(STATIC_QUERY);
+  for (let i = 0; i < qk.length; i++) url += (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(qk[i]) + '=' + encodeURIComponent(STATIC_QUERY[qk[i]]);
 
-  const res = http.request(CFG.method, fill(CFG.url, ctx, true), body, {
+  const res = http.request(CFG.method, url, body, {
     headers: headers,
     timeout: CFG.timeout,
     tags: { name: 'target' },
   });
   // A 401 despite proactive refresh (e.g. revoked key): force a refresh next time.
-  if (res.status === 401 && CFG.authMode !== 'none') tokenExp = 0;
+  if (res.status === 401 && !NO_TOKEN) tokenExp = 0;
 }
 `;
 }

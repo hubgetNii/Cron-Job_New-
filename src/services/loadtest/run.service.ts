@@ -33,6 +33,7 @@ import {
 import type { LoadEnvironmentClass } from '../../domain/enums.js';
 import { recordAudit, type AuditActor } from '../audit/audit.service.js';
 import { assertHostAllowedForClass, runPreflight } from './safety.service.js';
+import { buildAuthMaterial } from '../health-check/auth.js';
 import { renderK6Script, type AuthMode } from './k6-script.js';
 import { k6Version, startK6 } from './k6-process.js';
 import { BUCKET_MS, RunAggregator, type GuardrailKind } from './metrics-aggregator.js';
@@ -189,6 +190,8 @@ export interface AuthSetup {
   env: Record<string, string>;
 }
 
+const STATIC_AUTH_TYPES = new Set(['API_KEY', 'BEARER', 'BASIC', 'CUSTOM_HEADER']);
+
 /**
  * Env vars that give k6 the target's token handshake. The secret never touches
  * the script or argv, and the token URL must pass the host allow-list for the
@@ -201,9 +204,30 @@ export async function authSetup(
   const target = await findTargetById(apiId);
   if (!target || target.authenticationType === 'NONE') return { mode: 'none', env: {} };
   if (target.authenticationType !== 'OAUTH2') {
-    throw new Error(
-      `Auth type ${target.authenticationType} is not supported by the load runner yet (use OAUTH2 or NONE).`,
+    // Fixed credentials (API key, bearer, basic, custom header): resolved once here and handed
+    // to k6 through env, never through the script or argv.
+    if (!STATIC_AUTH_TYPES.has(target.authenticationType)) {
+      throw new Error(
+        `Auth type ${target.authenticationType} is not supported by the load runner (use OAUTH2, API_KEY, BEARER, BASIC, CUSTOM_HEADER or NONE).`,
+      );
+    }
+    const staticEnvelope = await findTargetCredentialEnvelope(apiId);
+    if (!staticEnvelope)
+      throw new Error(`Target is ${target.authenticationType} but has no stored credentials.`);
+    const material = await buildAuthMaterial(
+      target.authenticationType,
+      decryptCredentials(staticEnvelope),
     );
+    if (Object.keys(material.headers).length + Object.keys(material.query).length === 0) {
+      throw new Error(`Stored ${target.authenticationType} credentials are incomplete.`);
+    }
+    return {
+      mode: 'static',
+      env: {
+        LT_STATIC_HEADERS: JSON.stringify(material.headers),
+        LT_STATIC_QUERY: JSON.stringify(material.query),
+      },
+    };
   }
   const envelope = await findTargetCredentialEnvelope(apiId);
   if (!envelope) throw new Error('Target is OAUTH2 but has no stored credentials.');
