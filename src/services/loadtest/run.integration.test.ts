@@ -224,7 +224,8 @@ describe.skipIf(!dbUp || !k6Up)('load-test runner (real k6 + contract-accurate s
   }, 150_000);
 
   it('fixed credentials (API key header, bearer, query key) reach every request and no token handshake happens', async () => {
-    const seen: { key?: string; auth?: string; q?: string }[] = [];
+    const seen: { key?: string | undefined; auth?: string | undefined; q?: string | undefined }[] =
+      [];
     const echo = createServer((req, res) => {
       const u = new URL(req.url ?? '/', 'http://x');
       seen.push({
