@@ -44,6 +44,27 @@ export interface CallOptions {
   headers?: Record<string, string> | undefined;
 }
 
+/**
+ * Thrown when the test credential is refused for lacking a named permission
+ * ("the credential does not have the X permission"). That is a gap in how the
+ * key was issued — not a defect in the service — so the check that hit it is
+ * reported as BLOCKED rather than failed, and the same endpoint is not retried.
+ */
+export class PermissionBlockedError extends Error {
+  constructor(
+    readonly permission: string,
+    readonly endpoint: string,
+  ) {
+    super(`The test key lacks the ${permission} permission (needed for ${endpoint}).`);
+    this.name = 'PermissionBlockedError';
+  }
+}
+
+const PERMISSION_RE = /does not have the ([A-Za-z0-9_.:-]+) permission/i;
+/** `POST /v1/payouts/LTC-1-2` and `POST /v1/payouts` are the same endpoint group. */
+const endpointKey = (method: string, path: string): string =>
+  `${method} /${path.split('?')[0]!.split('/').filter(Boolean).slice(0, 2).join('/')}`;
+
 const asRecord = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 
@@ -51,6 +72,8 @@ export class ApiClient {
   readonly exchanges: Exchange[];
   private token: string | null = null;
   private tokenExp = 0;
+  /** Endpoint groups the client token was refused for, with the permission it lacks. */
+  private readonly denied = new Map<string, string>();
 
   /** `sink` lets several clients append to one evidence list. */
   constructor(
@@ -65,6 +88,23 @@ export class ApiClient {
   }
   get tokenUrl(): string {
     return this.opts.tokenUrl;
+  }
+  /** Scopes the current token carries (decoded, not verified — informational only). */
+  get scopes(): string[] | null {
+    const part = this.token?.split('.')[1];
+    if (!part) return null;
+    try {
+      const claims = JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as {
+        scopes?: unknown;
+        scope?: unknown;
+      };
+      const raw = claims.scopes ?? claims.scope;
+      if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string');
+      if (typeof raw === 'string') return raw.split(/\s+/).filter(Boolean);
+    } catch {
+      /* not a JWT */
+    }
+    return null;
   }
   get clientId(): string {
     return this.opts.clientId;
@@ -111,8 +151,11 @@ export class ApiClient {
     o: CallOptions = {},
     retried = false,
   ): Promise<ApiResponse> {
-    const headers: Record<string, string> = {};
     const useClientToken = o.token === undefined;
+    const key = endpointKey(method, path);
+    const knownDenial = useClientToken ? this.denied.get(key) : undefined;
+    if (knownDenial) throw new PermissionBlockedError(knownDenial, key);
+    const headers: Record<string, string> = {};
     if (o.token === undefined) headers['authorization'] = `Bearer ${await this.getToken()}`;
     else if (o.token !== null) headers['authorization'] = `Bearer ${o.token}`;
     if (o.key !== undefined) headers['idempotency-key'] = o.key;
@@ -165,6 +208,16 @@ export class ApiClient {
       ...(reference ? { reference } : {}),
       ...(errorCode ? { errorCode } : {}),
     });
+
+    // The client credential itself lacks a permission: stop here and say so.
+    if (status === 403 && useClientToken) {
+      const msg = asRecord(bodyRec['error'])['message'];
+      const perm = typeof msg === 'string' ? PERMISSION_RE.exec(msg)?.[1] : undefined;
+      if (perm) {
+        this.denied.set(key, perm);
+        throw new PermissionBlockedError(perm, key);
+      }
+    }
 
     // A reset/expired token → fetch a fresh one and retry once (client token only).
     if (status === 401 && useClientToken && !retried) {

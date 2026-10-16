@@ -305,6 +305,7 @@ export interface SuiteResultLike {
   status: 'PASS' | 'FAIL' | 'ERROR' | 'SKIPPED';
   assertions: SuiteAssertionLike[];
   note?: string | undefined;
+  blockedBy?: string | undefined;
 }
 
 export function findingsFromSuite(
@@ -312,6 +313,22 @@ export function findingsFromSuite(
   source: 'correctness' | 'security',
 ): Finding[] {
   const out: Finding[] = [];
+  const blocked = results.filter((r) => r.blockedBy !== undefined);
+  if (blocked.length > 0) {
+    const perms = [...new Set(blocked.map((r) => r.blockedBy!))].sort();
+    out.push({
+      id: `${source}.credential-permissions`,
+      source,
+      severity: 'MEDIUM',
+      title: `The test key is missing permissions — ${blocked.length} check(s) could not run`,
+      impact:
+        'These checks say nothing about the service yet: they were stopped by the credential, not by a defect.',
+      cause: `The credential used for testing was refused for lacking: ${perms.join(', ')}.`,
+      recommendation: `Issue a test key that grants ${perms.join(', ')} (with the matching read permissions), then re-run the suite.`,
+      reference: 'credential-permissions',
+      advisory: false,
+    });
+  }
   for (const r of results) {
     if (r.status === 'SKIPPED') continue;
     const infos = r.controls.map((c) => CONTROL_INFO[c] ?? FALLBACK);

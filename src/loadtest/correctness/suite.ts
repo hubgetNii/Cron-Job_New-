@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ApiClient, type ClientOptions, type Exchange } from './client.js';
+import { ApiClient, PermissionBlockedError, type ClientOptions, type Exchange } from './client.js';
 import { WebhookReceiver } from './receiver.js';
 import {
   CHECKS,
@@ -27,6 +27,8 @@ export interface CheckResult {
   /** Per-call evidence for THIS check: ids and statuses only — no bodies, no secrets. */
   evidence: Exchange[];
   note?: string;
+  /** Set when the check could not run because the test key lacks this permission. */
+  blockedBy?: string;
 }
 
 export interface SuiteSummary {
@@ -37,10 +39,16 @@ export interface SuiteSummary {
   skipped: number;
   warnings: number;
   assertions: { total: number; failed: number };
-  verdict: 'PASS' | 'FAIL';
+  /** Checks that could not run because the test key lacks permissions (subset of `skipped`). */
+  blocked?: number;
+  /** The distinct permissions the key was missing. */
+  missingPermissions?: string[];
+  verdict: 'PASS' | 'FAIL' | 'INCONCLUSIVE';
 }
 
 export interface SuiteReport {
+  /** Scopes the test credential's token carried (live runs), so a permission gap is visible. */
+  keyScopes?: string[] | null;
   mode: 'simulator' | 'live';
   startedAt: string;
   finishedAt: string;
@@ -279,6 +287,18 @@ export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
         evidence: api.exchanges.slice(from),
       });
     } catch (err) {
+      if (err instanceof PermissionBlockedError) {
+        results.push({
+          ...base(check),
+          status: 'SKIPPED',
+          assertions: [],
+          durationMs: Date.now() - t0,
+          evidence: api.exchanges.slice(from),
+          note: `BLOCKED — ${err.message}`,
+          blockedBy: err.permission,
+        });
+        continue;
+      }
       results.push({
         ...base(check),
         status: 'ERROR',
@@ -303,6 +323,7 @@ export async function runSuite(opts: SuiteOptions): Promise<SuiteReport> {
   }
   return {
     mode: sim ? 'simulator' : 'live',
+    ...(sim ? {} : { keyScopes: api.scopes }),
     startedAt,
     finishedAt: new Date().toISOString(),
     results,
@@ -315,6 +336,17 @@ export function summarize(results: CheckResult[]): SuiteSummary {
   const all = results.flatMap((r) => r.assertions);
   const failed = count('FAIL');
   const errored = count('ERROR');
+  const blocked = results.filter((r) => r.blockedBy !== undefined);
+  const missingPermissions = [...new Set(blocked.map((r) => r.blockedBy!))].sort();
+  // A real failure stands. Otherwise a blocked check means the suite could not judge the service.
+  const verdict: SuiteSummary['verdict'] =
+    failed + errored > 0
+      ? 'FAIL'
+      : blocked.length > 0
+        ? 'INCONCLUSIVE'
+        : count('PASS') > 0
+          ? 'PASS'
+          : 'FAIL';
   return {
     total: results.length,
     passed: count('PASS'),
@@ -323,6 +355,7 @@ export function summarize(results: CheckResult[]): SuiteSummary {
     skipped: count('SKIPPED'),
     warnings: results.reduce((n, r) => n + r.warnings, 0),
     assertions: { total: all.length, failed: all.filter((a) => !a.pass).length },
-    verdict: failed + errored === 0 && count('PASS') > 0 ? 'PASS' : 'FAIL',
+    ...(blocked.length > 0 ? { blocked: blocked.length, missingPermissions } : {}),
+    verdict,
   };
 }

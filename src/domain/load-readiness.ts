@@ -29,7 +29,7 @@ export interface LoadEvidence {
 
 export interface SuiteEvidence {
   id: string;
-  verdict: 'PASS' | 'FAIL';
+  verdict: 'PASS' | 'FAIL' | 'INCONCLUSIVE';
   warnings: number;
   skipped: number;
   finishedAt: string;
@@ -108,6 +108,12 @@ function loadGate(
 function suiteGate(id: string, name: string, ev: SuiteEvidence | null, missing: string): Gate {
   if (!ev) return { id, name, required: true, status: 'MISSING', detail: missing };
   const base = { id, name, required: true, evidenceId: ev.id };
+  if (ev.verdict === 'INCONCLUSIVE')
+    return {
+      ...base,
+      status: 'MISSING',
+      detail: `The latest ${name.toLowerCase()} run could not judge the service (the test key lacked permissions) — it does not count as evidence.`,
+    };
   if (ev.verdict === 'FAIL')
     return {
       ...base,

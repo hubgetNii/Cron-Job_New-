@@ -148,11 +148,13 @@ function digest(run: suites.CorrectnessRun, now: Date): SuiteDigest {
     skipped: s?.skipped ?? 0,
     total,
     headline:
-      verdict === 'INCONCLUSIVE'
-        ? `The ${name} run did not complete, so it proves nothing.`
-        : failedChecks.length === 0
-          ? `All ${s?.passed ?? 0} ${name} checks passed${s?.skipped ? ` (${s.skipped} could not run in this environment)` : ''}${s?.warnings ? `, with ${s.warnings} hardening suggestion(s)` : ''}.`
-          : `${failedChecks.length} of ${total} ${name} checks failed: ${failedChecks.map((c) => c.title.toLowerCase()).join('; ')}.`,
+      verdict === 'INCONCLUSIVE' && (s?.blocked ?? 0) > 0
+        ? `${s?.blocked} of ${total} ${name} checks could not run because the test key lacks ${(s?.missingPermissions ?? []).join(', ')}. Nothing was found wrong with the service; issue a fuller key and re-run.`
+        : verdict === 'INCONCLUSIVE'
+          ? `The ${name} run did not complete, so it proves nothing.`
+          : failedChecks.length === 0
+            ? `All ${s?.passed ?? 0} ${name} checks passed${s?.skipped ? ` (${s.skipped} could not run in this environment)` : ''}${s?.warnings ? `, with ${s.warnings} hardening suggestion(s)` : ''}.`
+            : `${failedChecks.length} of ${total} ${name} checks failed: ${failedChecks.map((c) => c.title.toLowerCase()).join('; ')}.`,
     failedChecks,
   };
 }
