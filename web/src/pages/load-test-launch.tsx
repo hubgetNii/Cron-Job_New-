@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { OctagonX, Play, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -634,6 +634,14 @@ function SchedulesCard({
 function AuthorizationsCard({ isAdmin }: { isAdmin: boolean }) {
   const qc = useQueryClient();
   const me = authStore.user();
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === '#authorizations') {
+      document
+        .getElementById('authorizations')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.hash]);
   const { data = [] } = useQuery({
     queryKey: ['lt-auths'],
     queryFn: runApi.authorizations,
@@ -653,7 +661,7 @@ function AuthorizationsCard({ isAdmin }: { isAdmin: boolean }) {
     EXPIRED: 'var(--color-unknown)',
   };
   return (
-    <Card>
+    <Card id="authorizations" className="scroll-mt-4">
       <CardHeader>
         <CardTitle>Test authorizations</CardTitle>
       </CardHeader>
@@ -1005,6 +1013,7 @@ export function LoadTestLaunchPage() {
           </Link>
         </p>
       </div>
+      <AuthorizationsCard isAdmin={roles.includes('ADMIN')} />
       {!canRun && (
         <p className="rounded-md border border-[var(--color-border)] p-3 text-sm">
           Your role can view runs but not start them. Starting tests needs ADMIN or OPERATOR.
@@ -1151,7 +1160,6 @@ export function LoadTestLaunchPage() {
           )}
         </CardContent>
       </Card>
-      <AuthorizationsCard isAdmin={roles.includes('ADMIN')} />
       <WebhookCard canRun={canRun} />
       <SchedulesCard targets={targets} canRun={canRun} />
       <Card>

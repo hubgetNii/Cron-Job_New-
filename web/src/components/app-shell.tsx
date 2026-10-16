@@ -17,6 +17,7 @@ import {
 import { useSummary } from '@/lib/queries';
 import { api } from '@/lib/api';
 import { authStore } from '@/lib/auth';
+import { ApprovalNotice } from '@/components/approval-notice';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -105,6 +106,7 @@ export function AppShell() {
       <main className="flex-1 p-6">
         <Outlet />
       </main>
+      <ApprovalNotice />
     </div>
   );
 }
