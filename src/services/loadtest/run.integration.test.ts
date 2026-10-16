@@ -27,6 +27,7 @@ const { upsertTargetConfig, setKillSwitch } =
 const runs = await import('../../repositories/load-test-runs.repo.js');
 const svc = await import('./run.service.js');
 const { createValidatedDataSet } = await import('./data-set.service.js');
+const { harvestReferences } = await import('./harvest.service.js');
 const { packById, planFromPack } = await import('../../loadtest/packs/packs.js');
 
 const actor = { userId: null, label: 'test:loadtest' };
@@ -190,6 +191,36 @@ describe.skipIf(!dbUp || !k6Up)('load-test runner (real k6 + contract-accurate s
     expect(b.summary!.errorRate).toBe(0);
     expect(kindTotal('collection')).toBe(a.summary!.totalRequests + b.summary!.totalRequests);
     expect(simState().duplicateEffects).toBe(0);
+  }, 150_000);
+
+  it('harvested references feed the status-poll pack: every lookup finds the earlier collection', async () => {
+    const create = await packRun('collections-momo-telecel');
+    await svc.executeRun(create, { workerId: 'test-worker' });
+    const made = await finished(create.id);
+    expect(made.status).toBe('COMPLETED');
+
+    const ds = await harvestReferences(create.id, 20, actor);
+    expect(ds.recordCount).toBeGreaterThan(0);
+    const poll = packById('collection-status-poll')!;
+    const plan = await svc.createPlan(
+      {
+        apiId: targetId,
+        name: 'poll-harvested',
+        config: planFromPack(poll, {
+          profile: 'SMOKE',
+          targetRps: 2,
+          durationSeconds: 10,
+          maxVus: 10,
+          dataSetId: ds.id,
+        }),
+      },
+      actor,
+    );
+    const claimed = await claim(plan.id);
+    await svc.executeRun(claimed, { workerId: 'test-worker' });
+    const polled = await finished(claimed.id);
+    expect(polled.status).toBe('COMPLETED');
+    expect(polled.summary!.statusCounts['200']).toBe(polled.summary!.totalRequests);
   }, 150_000);
 
   it('payout-batch pack: $repeat expands to unique items and the fan-out is real', async () => {

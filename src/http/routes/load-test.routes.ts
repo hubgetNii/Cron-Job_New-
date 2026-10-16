@@ -23,6 +23,7 @@ import {
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { LOAD_PROFILES, LOAD_RUN_STATUSES } from '../../domain/enums.js';
 import { PlanConfigSchema, peakRps } from '../../domain/load-plan.js';
+import { harvestReferences } from '../../services/loadtest/harvest.service.js';
 import * as runs from '../../repositories/load-test-runs.repo.js';
 import { abortRun, createPlan, queueRun } from '../../services/loadtest/run.service.js';
 import { effectiveRps } from '../../domain/load-plan.js';
@@ -287,6 +288,22 @@ loadTestRouter.get('/load-tests/runs/:id/metrics', canView, async (req: Request,
   if (!(await runs.getRun(id))) throw new NotFoundError('Run not found');
   res.json({ data: await runs.listMetrics(id) });
 });
+
+/** Turns the references a finished run created into a data set for the status-poll packs. */
+loadTestRouter.post(
+  '/load-tests/runs/:id/harvest-references',
+  canPlan,
+  async (req: Request, res: Response) => {
+    const { limit } = z
+      .object({ limit: z.number().int().min(1).max(2000).default(500) })
+      .parse(req.body ?? {});
+    res
+      .status(201)
+      .json({
+        data: await harvestReferences(idParam.parse(req.params.id), limit, actorFromRequest(req)),
+      });
+  },
+);
 
 loadTestRouter.post('/load-tests/runs/:id/abort', canRun, async (req: Request, res: Response) => {
   const { reason } = z.object({ reason: z.string().min(3).max(500) }).parse(req.body);

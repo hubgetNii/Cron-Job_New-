@@ -364,6 +364,37 @@ function LoadForm({
   );
 }
 
+function HarvestButton({ runId }: { runId: string }) {
+  const qc = useQueryClient();
+  const m = useMutation({
+    mutationFn: () => runApi.harvest(runId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['lt-datasets'] }),
+  });
+  if (m.isSuccess)
+    return (
+      <span className="text-xs text-[var(--color-up)]" title={m.data.caveat ?? undefined}>
+        Saved “{m.data.name}” ({m.data.recordCount}){m.data.caveat ? ' — see note' : ''}
+      </span>
+    );
+  return (
+    <>
+      <button
+        className="underline disabled:opacity-50"
+        disabled={m.isPending}
+        title="Save the references this run created as a data set for the status-lookup scenarios"
+        onClick={() => m.mutate()}
+      >
+        {m.isPending ? 'Saving…' : 'Save references'}
+      </button>
+      {m.error && (
+        <span className="ml-1 text-[var(--color-down)]" title={errText(m.error)}>
+          not available
+        </span>
+      )}
+    </>
+  );
+}
+
 function SuiteRunsTable({ rows }: { rows: SuiteRunInfo[] }) {
   return (
     <Table>
@@ -589,6 +620,7 @@ export function LoadTestLaunchPage() {
                         Report
                       </Link>
                     )}
+                    {canRun && r.status === 'COMPLETED' && <HarvestButton runId={r.id} />}
                   </TD>
                 </TR>
               ))}

@@ -25,7 +25,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | B11 | **Side-by-side run comparison** and a **scheduled regression** view (trend is per plan today) | C | Trend table exists; no diff view yet. |
 | B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
 | B5 | **Scheduled regression runs** (correctness + security on a cadence; CI hook) | C | Phase 29 in the original plan. |
-| B6 | **Reference harvesting**: turn the references a run created into a data set for the `needs_data` poll packs | C | 7 catalog endpoints need ids from an earlier run; today that is manual. |
 | B8 | Runner auth beyond `NONE` / `OAUTH2` (API key, bearer, custom header) | C | Fails with a clear message today. |
 | B9 | Live-mode webhook receiver deployment for the correctness suite | B | Depends on A4. |
 | B10 | Monitoring the iSmart developer API itself in the cron monitor needs OAuth2 `form` mode in the health-check token cache (it only does Basic) | C | Only if you want to monitor, not just load-test, that API. |
@@ -55,3 +54,4 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D6 | **Retention** for load-test and correctness run tables (was B7); compliance tables never pruned | Phase 28, 2026-10-16 |
 | D7 | **Run launcher and live console** (was B2): `/app/load-tests/launch` — pick service and scenario, tune profile/rps/duration/VUs, create example data sets, dry-run the safety gate, start or stop a run, live rps/p95/failure charts, recent runs, correctness and security suite launch. Remaining gap: no free-form plan editor (plans come from scenario packs) | B2, 2026-10-16 |
 | D8 | **Read access for COMPLIANCE and MANAGEMENT** (was B12/B14): plans, runs, metrics, packs, catalog and suite runs are now readable by them; starting runs, data sets and kill switch stay closed; the Compliance matrix was already readable | 2026-10-16 |
+| D9 | **Reference harvesting** (was B6): `POST /load-tests/runs/:id/harvest-references` rebuilds the references a finished run created (`LT-<salt>-<n>`) into a data set for the status-poll packs; dashboard "Save references" button; verified end-to-end with real k6 (every lookup found its collection). Caveat: failed iterations were never created, so a run with failures warns that some lookups may 404 | B6, 2026-10-16 |

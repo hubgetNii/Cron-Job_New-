@@ -121,6 +121,10 @@ export const runApi = {
   queue: (planId: string) => post<LoadRunInfo>(`/load-tests/plans/${planId}/runs`, {}),
   queueSuite: (suite: 'correctness' | 'security', apiId: string) =>
     post<SuiteRunInfo>(`/load-tests/${suite}-runs`, { apiId }),
+  harvest: (runId: string, limit = 500) =>
+    post<DataSetInfo & { caveat: string | null }>(`/load-tests/runs/${runId}/harvest-references`, {
+      limit,
+    }),
   abort: (runId: string, reason: string) =>
     post<LoadRunInfo>(`/load-tests/runs/${runId}/abort`, { reason }),
   runs: () => req<Wrapped<LoadRunInfo[]>>('/load-tests/runs?limit=15').then((r) => r.data),
