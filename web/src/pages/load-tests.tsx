@@ -338,12 +338,20 @@ export function LoadTestsPage() {
             live separately.
           </p>
         </div>
-        <Link
-          className="rounded-md bg-[var(--color-brand)] px-3 py-2 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90"
-          to="/app/load-tests/launch"
-        >
-          Run a test
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm hover:bg-[var(--color-surface-2)]"
+            to="/app/load-tests/compare"
+          >
+            Compare runs
+          </Link>
+          <Link
+            className="rounded-md bg-[var(--color-brand)] px-3 py-2 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90"
+            to="/app/load-tests/launch"
+          >
+            Run a test
+          </Link>
+        </div>
       </div>
       <div className="flex gap-1 border-b border-[var(--color-border)]" role="tablist">
         {TABS.map((t) => (

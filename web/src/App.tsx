@@ -18,6 +18,7 @@ import { LoadTestsPage } from '@/pages/load-tests';
 import { LoadTestReportPage } from '@/pages/load-test-report';
 import { CompliancePage } from '@/pages/compliance';
 import { LoadTestLaunchPage } from '@/pages/load-test-launch';
+import { LoadTestComparePage } from '@/pages/load-test-compare';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
           { path: 'reports', element: <ReportsPage /> },
           { path: 'load-tests', element: <LoadTestsPage /> },
           { path: 'load-tests/launch', element: <LoadTestLaunchPage /> },
+          { path: 'load-tests/compare', element: <LoadTestComparePage /> },
           { path: 'load-tests/:kind/:id', element: <LoadTestReportPage /> },
           { path: 'compliance', element: <CompliancePage /> },
         ],
