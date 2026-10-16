@@ -22,7 +22,6 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
-| B2 | **Dashboard: plan builder, run launcher and live run console** (create a plan from a pack, pick a data set, queue/abort a run, watch it live) | C | The Load Tests area is read-only: reports, readiness and the catalog are built; runs are still started via the API. Needs a live metrics stream (SSE) or polling view. |
 | B11 | **Side-by-side run comparison** and a **scheduled regression** view (trend is per plan today) | C | Trend table exists; no diff view yet. |
 | B12 | Compliance/management roles can read reports but **cannot read plans, runs or the catalog** endpoints directly | C | Intentional for now (reports only); revisit with Phase 28. |
 | B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
@@ -56,3 +55,4 @@ _Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phase
 | D4 | Demo data for the dashboard (`npm run demo:loadtest`, removable with `-- --clean`) | Phase 27, 2026-10-16 |
 | D5 | **Phase 28 compliance evidence** (was B3): 32-control DRAFT library, assessment engine, COMPLIANCE-only sign-off, tamper-evident evidence packs with verifier CLI, dashboard Compliance page | Phase 28, 2026-10-16 |
 | D6 | **Retention** for load-test and correctness run tables (was B7); compliance tables never pruned | Phase 28, 2026-10-16 |
+| D7 | **Run launcher and live console** (was B2): `/app/load-tests/launch` — pick service and scenario, tune profile/rps/duration/VUs, create example data sets, dry-run the safety gate, start or stop a run, live rps/p95/failure charts, recent runs, correctness and security suite launch. Remaining gap: no free-form plan editor (plans come from scenario packs) | B2, 2026-10-16 |
