@@ -170,6 +170,40 @@ const EnvSchema = z.object({
 
   WATCHDOG_EXTERNAL_ENDPOINT: z.string().url().optional(),
 
+  // Load testing (Phase 21+). Deny-by-default: nothing runs unless enabled AND the
+  // DB kill switch is released AND the target has an approved authorization.
+  LOAD_TEST_ENABLED: BoolFromString.default('false'),
+  // Per-class hard ceilings "CLASS:rps/vus/seconds,…". PRODUCTION is read-only
+  // and tiny by design; money-moving load on PRODUCTION is refused outright.
+  LOAD_TEST_CEILINGS: z
+    .string()
+    .default('MOCK:5000/2000/3600,SANDBOX:25/100/1800,STAGING:25/100/1800,PRODUCTION:2/5/300'),
+  // Real-side-effect endpoints (e.g. utility purchases) are capped to this rps
+  // even when explicitly authorised.
+  LOAD_TEST_REAL_SIDE_EFFECT_MAX_RPS: z.coerce.number().positive().default(1),
+  // Host allow-lists (comma-separated, exact match, case-insensitive).
+  LOAD_TEST_PRODUCTION_HOSTS: z
+    .string()
+    .default('api.ismartghana.com,gateway.ismartghana.org,vend.ismartghana.com'),
+  LOAD_TEST_SANDBOX_HOSTS: z.string().default('stgdeveloper-api.ismartghana.com'),
+  LOAD_TEST_MOCK_HOSTS: z.string().default('localhost,127.0.0.1,::1,simulator'),
+  // Card fixtures that may appear in test data even though they are Luhn-valid.
+  LOAD_TEST_APPROVED_CARD_FIXTURES: z.string().default('4111111111111111'),
+  // Longest an authorization window may be, in days.
+  LOAD_TEST_MAX_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
+
+  // Runner (Phase 23).
+  LOAD_TEST_K6_BIN: z.string().default('k6'),
+  LOAD_TEST_WORKER_POLL_MS: z.coerce.number().int().min(200).default(2000),
+  // Guardrail: abort when the server-side failure rate (5xx / network / timeout)
+  // over the window exceeds the threshold, once enough samples have arrived.
+  LOAD_TEST_GUARDRAIL_WINDOW_SECONDS: z.coerce.number().int().min(5).default(30),
+  LOAD_TEST_GUARDRAIL_ERROR_RATE: z.coerce.number().min(0.01).max(1).default(0.25),
+  // 401/403 or 429 share of the window that stops a run (bad key, limit refusals, throttling).
+  LOAD_TEST_GUARDRAIL_REFUSAL_RATE: z.coerce.number().min(0.05).max(1).default(0.5),
+  LOAD_TEST_GUARDRAIL_RATE_LIMITED_RATE: z.coerce.number().min(0.05).max(1).default(0.5),
+  LOAD_TEST_GUARDRAIL_MIN_SAMPLES: z.coerce.number().int().min(1).default(50),
+
   ENABLE_REQUEST_LOGGING: BoolFromString.default('true'),
 });
 

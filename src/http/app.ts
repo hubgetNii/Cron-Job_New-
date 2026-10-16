@@ -25,6 +25,7 @@ import { slaRouter } from './routes/sla.routes.js';
 import { reportsRouter } from './routes/reports.routes.js';
 import { digestRouter } from './routes/digest.routes.js';
 import { notificationContactsRouter } from './routes/notification-contacts.routes.js';
+import { loadTestRouter } from './routes/load-test.routes.js';
 
 /**
  * Builds the Express application. Kept free of `listen()` so tests can drive it
@@ -95,6 +96,7 @@ export function createApp(): Express {
   api.use(reportsRouter);
   api.use(digestRouter);
   api.use(notificationContactsRouter);
+  api.use(loadTestRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

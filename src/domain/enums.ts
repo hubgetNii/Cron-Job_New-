@@ -117,6 +117,25 @@ export const RBAC_ROLES = [
 ] as const;
 export type RbacRole = (typeof RBAC_ROLES)[number];
 
+export const LOAD_ENVIRONMENT_CLASSES = ['MOCK', 'SANDBOX', 'STAGING', 'PRODUCTION'] as const;
+export type LoadEnvironmentClass = (typeof LOAD_ENVIRONMENT_CLASSES)[number];
+
+export const LOAD_AUTHORIZATION_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'REVOKED'] as const;
+export type LoadAuthorizationStatus = (typeof LOAD_AUTHORIZATION_STATUSES)[number];
+
+export const LOAD_PROFILES = ['SMOKE', 'LOAD', 'STRESS', 'SPIKE', 'SOAK', 'BREAKPOINT'] as const;
+export type LoadProfile = (typeof LOAD_PROFILES)[number];
+
+export const LOAD_RUN_STATUSES = [
+  'QUEUED',
+  'PREFLIGHT',
+  'RUNNING',
+  'COMPLETED',
+  'ABORTED',
+  'FAILED',
+] as const;
+export type LoadRunStatus = (typeof LOAD_RUN_STATUSES)[number];
+
 /** Every database enum type name mapped to its label set, for the parity test. */
 export const DB_ENUMS = {
   user_status: USER_STATUSES,
@@ -133,6 +152,10 @@ export const DB_ENUMS = {
   alert_type: ALERT_TYPES,
   alert_channel: ALERT_CHANNELS,
   alert_status: ALERT_STATUSES,
+  load_environment_class: LOAD_ENVIRONMENT_CLASSES,
+  load_authorization_status: LOAD_AUTHORIZATION_STATUSES,
+  load_profile: LOAD_PROFILES,
+  load_run_status: LOAD_RUN_STATUSES,
 } as const satisfies Record<string, readonly string[]>;
 
 /**
