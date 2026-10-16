@@ -69,6 +69,23 @@ export const PlanConfigSchema = z
      * 10 items has fanout 10. The safety gate judges requests/s × fanout.
      */
     fanout: z.number().int().min(1).max(100).default(1),
+    /**
+     * Pass/fail thresholds for the report (see load-slo.ts). Omitted fields use
+     * defaults derived from the request type (read / write / batch).
+     */
+    slo: z
+      .object({
+        p95Ms: z.number().positive().max(600_000),
+        p99Ms: z.number().positive().max(600_000),
+        maxServerErrorRate: z.number().min(0).max(1),
+        minThroughputRatio: z.number().min(0.1).max(1),
+        maxRateLimitedShare: z.number().min(0).max(1),
+        maxClientErrorShare: z.number().min(0).max(1),
+        /** Effects/s the service must sustain (e.g. the launch estimate). Used by STRESS / BREAKPOINT. */
+        requiredCapacityRps: z.number().positive().nullable(),
+      })
+      .partial()
+      .optional(),
     /** Scenario pack this plan was instantiated from (informational). */
     packId: z.string().max(100).optional(),
     /** Header carrying a unique per-request key; null disables. */

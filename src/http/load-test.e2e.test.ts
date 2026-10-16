@@ -51,6 +51,8 @@ let admin1: string;
 let admin2: string;
 let operator: string;
 let viewer: string;
+let compliance: string;
+let management: string;
 let sandboxTarget: string;
 let prodTarget: string;
 
@@ -66,6 +68,8 @@ describe.skipIf(!dbUp)('load-test safety foundation (Phase 21)', () => {
     admin2 = await loginToken('lt-admin2@test.local', ['ADMIN']);
     operator = await loginToken('lt-op@test.local', ['OPERATOR']);
     viewer = await loginToken('lt-viewer@test.local', ['VIEWER']);
+    compliance = await loginToken('lt-comp@test.local', ['COMPLIANCE']);
+    management = await loginToken('lt-mgmt@test.local', ['MANAGEMENT']);
     sandboxTarget = await seedTarget(
       'lt-e2e-sandbox',
       'https://stgdeveloper-api.ismartghana.com/v1/collections',
@@ -484,6 +488,143 @@ describe.skipIf(!dbUp)('load-test safety foundation (Phase 21)', () => {
     expect(JSON.stringify(refused.body)).toContain('AUTH_');
     const runs = await request(app).get('/api/v1/load-tests/security-runs').set(auth(operator));
     expect(runs.status).toBe(200);
+  });
+
+  it('reports: business roles can read, viewers cannot, every format downloads safely', async () => {
+    const cfgJson = JSON.stringify({
+      profile: 'LOAD',
+      method: 'POST',
+      path: '/v1/payouts',
+      headers: {},
+      idempotencyHeader: 'Idempotency-Key',
+      targetRps: 10,
+      durationSeconds: 100,
+      maxVus: 50,
+      spikeMultiplier: 10,
+      expectedStatuses: [202],
+      timeoutMs: 30000,
+      dataSelection: 'sequential',
+      moneyMoving: true,
+      realSideEffects: false,
+      fanout: 1,
+    });
+    const plan = await query<{ id: string }>(
+      `INSERT INTO load_test_plans (api_id, name, profile, config) VALUES ($1,'e2e report plan','LOAD',$2) RETURNING id`,
+      [sandboxTarget, cfgJson],
+    );
+    const summary = {
+      totalRequests: 900,
+      failedRequests: 0,
+      errorRate: 0,
+      statusCounts: { '202': 900 },
+      errorClasses: {
+        server5xx: 0,
+        rateLimited429: 0,
+        client4xx: 0,
+        networkOrTimeout: 0,
+        unexpectedOther: 0,
+      },
+      latencyMs: { avg: 300, p50: 250, p90: 500, p95: 640, p99: 900, max: 1500 },
+      achievedAvgRps: 9,
+      peakRps: 11,
+      maxSustainedRps: 11,
+      droppedIterations: 0,
+      generatorSaturated: false,
+      authRequests: 2,
+      activeSeconds: 100,
+    };
+    const run = await query<{ id: string }>(
+      `INSERT INTO load_test_runs (plan_id, api_id, status, plan_snapshot, effective_class, summary, finished_reason, started_at, finished_at)
+       VALUES ($1,$2,'COMPLETED',$3,'SANDBOX',$4,'completed', now() - interval '2 minutes', now()) RETURNING id`,
+      [
+        plan.rows[0]!.id,
+        sandboxTarget,
+        JSON.stringify({
+          config: JSON.parse(cfgJson),
+          target: {
+            name: 'T',
+            url: 'https://stg.example',
+            isMoneyMoving: false,
+            environment: 'sandbox',
+          },
+          peakRps: 10,
+        }),
+        JSON.stringify(summary),
+      ],
+    );
+    const id = run.rows[0]!.id;
+    const url = `/api/v1/load-tests/runs/${id}/report`;
+
+    // Business teams read reports; VIEWER cannot; unknown ids 404.
+    for (const t of [compliance, management, operator]) {
+      const r = await request(app).get(url).set(auth(t));
+      expect(r.status).toBe(200);
+      expect(r.body.data.executive.decision).toBe('GO');
+    }
+    await request(app).get(url).set(auth(viewer)).expect(403);
+    await request(app)
+      .get('/api/v1/load-tests/runs/00000000-0000-4000-8000-000000000000/report')
+      .set(auth(operator))
+      .expect(404);
+    await request(app).get(`${url}?format=docx`).set(auth(operator)).expect(422);
+
+    const html = await request(app).get(`${url}?format=html`).set(auth(compliance));
+    expect(html.status).toBe(200);
+    expect(html.headers['content-type']).toContain('text/html');
+    expect(html.headers['content-disposition']).toMatch(
+      /attachment; filename="load-report-[0-9a-f]{8}\.html"/,
+    );
+    expect(html.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    );
+    expect(html.text).not.toMatch(/<script/i);
+    expect(html.text).toContain('Summary for everyone');
+
+    const xlsx = await request(app)
+      .get(`${url}?format=xlsx`)
+      .set(auth(operator))
+      .buffer(true)
+      .parse((res, cb) => {
+        const c: Buffer[] = [];
+        res.on('data', (d: Buffer) => c.push(d));
+        res.on('end', () => cb(null, Buffer.concat(c)));
+      });
+    expect(xlsx.headers['content-type']).toContain('spreadsheetml');
+    expect((xlsx.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    const csv = await request(app).get(`${url}?format=csv&table=Objectives`).set(auth(operator));
+    expect(csv.text.split('\n')[0]).toBe('objective,target,actual,status,meaning');
+    const pdf = await request(app)
+      .get(`${url}?format=pdf`)
+      .set(auth(operator))
+      .buffer(true)
+      .parse((res, cb) => {
+        const c: Buffer[] = [];
+        res.on('data', (d: Buffer) => c.push(d));
+        res.on('end', () => cb(null, Buffer.concat(c)));
+      });
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+
+    // Index and readiness.
+    const index = await request(app).get('/api/v1/load-tests/reports').set(auth(management));
+    expect(index.status).toBe(200);
+    expect(
+      (index.body.data as { id: string; verdict: string }[]).find((i) => i.id === id),
+    ).toMatchObject({ verdict: 'PASS' });
+    const ready = await request(app)
+      .get(`/api/v1/load-tests/readiness/${sandboxTarget}`)
+      .set(auth(compliance));
+    expect(ready.body.data.readiness.status).toBe('INCOMPLETE'); // only a load run; suites missing
+    expect((ready.body.data.readiness.nextSteps as string[]).join(' ')).toContain(
+      'correctness suite',
+    );
+    await request(app)
+      .get(`/api/v1/load-tests/readiness/${sandboxTarget}`)
+      .set(auth(viewer))
+      .expect(403);
+    await request(app)
+      .get(`/api/v1/load-tests/correctness-runs/${id}/report`)
+      .set(auth(operator))
+      .expect(404);
   });
 
   it('validates a data set without echoing offending values', async () => {

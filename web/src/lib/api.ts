@@ -78,7 +78,7 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   let res = await rawFetch(path, init);
 
   if (res.status === 401 && !path.startsWith('/auth/') && (await tryRefresh())) {
@@ -109,7 +109,7 @@ export interface LoginResponse {
   expiresIn: number;
 }
 
-type Wrapped<T> = { data: T; count?: number };
+export type Wrapped<T> = { data: T; count?: number };
 
 /** Serialises trace-search params, dropping empties. Also used for the CSV export URL. */
 export function traceQuery(params: Record<string, unknown>): string {
@@ -249,6 +249,13 @@ export async function downloadWithAuth(path: string, filename: string): Promise<
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Authenticated fetch that returns the body as a Blob (for opening a generated report in a new tab). */
+export async function fetchBlob(path: string): Promise<Blob> {
+  const res = await rawFetch(path, {});
+  if (!res.ok) throw new ApiError(`Request failed (${res.status})`, res.status);
+  return res.blob();
 }
 
 /** Public, unauthenticated — the status page must work with no session. */

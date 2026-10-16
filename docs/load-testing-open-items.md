@@ -1,6 +1,6 @@
 # Load-testing programme — open-items register
 
-_Living document. Opened 2026-10-16 at Phase 26. Once Phases 27–28 are built we walk this list top to bottom and close every row. Owner: **U** = user / iSmart / compliance, **C** = code (Claude), **B** = both._
+_Living document. Opened 2026-10-16 at Phase 26; updated at Phase 27. Once Phases 27–28 are built we walk this list top to bottom and close every row. Owner: **U** = user / iSmart / compliance, **C** = code (Claude), **B** = both._
 
 ## A. Blocked on you or iSmart (cannot be closed from code)
 
@@ -21,8 +21,10 @@ _Living document. Opened 2026-10-16 at Phase 26. Once Phases 27–28 are built w
 
 | # | Item | Owner | Notes |
 |---|---|---|---|
-| B1 | **Phase 27 — SLO engine + production-readiness score** | C | Per-run PASS/WARN/FAIL against SLO thresholds; correctness and security as gates, not weights. |
-| B2 | **Phase 27 — report page** (business view + technical view, logs, PDF/XLSX/CSV/JSON, trends, run comparison) and the dashboard UI for plans, live run console, correctness and security results | C | Priority deliverable. `web/` has no load-testing UI yet; COMPLIANCE/MANAGEMENT roles currently cannot read these endpoints. |
+| B1 | ~~Phase 27 — SLO engine + readiness~~ | C | **Built** (see D). Remaining: a launch-volume figure (A6) so `requiredCapacityRps` has a real target. |
+| B2 | **Dashboard: plan builder, run launcher and live run console** (create a plan from a pack, pick a data set, queue/abort a run, watch it live) | C | The Load Tests area is read-only: reports, readiness and the catalog are built; runs are still started via the API. Needs a live metrics stream (SSE) or polling view. |
+| B11 | **Side-by-side run comparison** and a **scheduled regression** view (trend is per plan today) | C | Trend table exists; no diff view yet. |
+| B12 | Compliance/management roles can read reports but **cannot read plans, runs or the catalog** endpoints directly | C | Intentional for now (reports only); revisit with Phase 28. |
 | B3 | **Phase 28 — compliance evidence**: PCI DSS v4.0.1 / OWASP / BoG / data-protection mappings (DRAFT), evidence pack with SHA-256 manifest, reviewer sign-off | C | Control tags already on every check; mapping + pack still to do. |
 | B4 | **Worker packaging**: Dockerfile/compose service + deployment runbook for `loadtest-worker` | C | Today it is `npm run loadtest-worker` with k6 on PATH. |
 | B5 | **Scheduled regression runs** (correctness + security on a cadence; CI hook) | C | Phase 29 in the original plan. |
@@ -41,8 +43,14 @@ _Living document. Opened 2026-10-16 at Phase 26. Once Phases 27–28 are built w
 | C3 | Git author is `Ismar Ghana` — guessed from the home directory, never confirmed | U |
 | C4 | Re-verify `src/loadtest/contract/ismartpay.ts` against the live docs before any sign-off (it is a transcription as of 2026-10-15) | C |
 | C5 | Simulator conventions that are not iSmart facts: fee rounding (1 %, min 0.10), `insufficient_funds` code, failure-reason strings, settlement/resettlement behaviour | C |
+| C7 | Demo data currently lives in the **dev database** (target “Demo — iSmartPay Simulator”); remove with `npm run demo:loadtest -- --clean` before any real evidence is gathered, or it will sit in the reports index | U |
 | C6 | Excluded endpoints to revisit once A2 is answered: settle-now, resettlements, checkout cancel, settlement-policy writes | B |
 
 ## D. Closed
 
-_(none yet)_
+| # | Item | Closed |
+|---|---|---|
+| D1 | SLO engine, findings, readiness gates and the report builder (JSON, HTML, XLSX, CSV, PDF) | Phase 27, 2026-10-16 |
+| D2 | Human-readable report page (Summary / Technical toggle) in the dashboard, role access for COMPLIANCE and MANAGEMENT | Phase 27, 2026-10-16 |
+| D3 | False "saturated generator" on slow targets (VU pre-allocation assumed fast responses) | Phase 27, 2026-10-16 |
+| D4 | Demo data for the dashboard (`npm run demo:loadtest`, removable with `-- --clean`) | Phase 27, 2026-10-16 |

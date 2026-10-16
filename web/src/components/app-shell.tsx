@@ -11,6 +11,7 @@ import {
   Siren,
   CircleDot,
   Gauge,
+  FlaskConical,
 } from 'lucide-react';
 import { useSummary } from '@/lib/queries';
 import { api } from '@/lib/api';
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/app/alerts', label: 'Notifications', Icon: ListChecks },
   { to: '/app/sla', label: 'SLA', Icon: Gauge },
   { to: '/app/reports', label: 'Reports', Icon: FileText },
+  { to: '/app/load-tests', label: 'Load tests', Icon: FlaskConical },
   { to: '/app/approvals', label: 'Approvals', Icon: ShieldQuestion },
 ];
 
@@ -43,12 +45,12 @@ export function AppShell() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col">
-      <header className="flex items-center gap-4 border-b border-[var(--color-border)] px-6 py-3">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[var(--color-border)] px-6 py-3">
         <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight">
           <CircleDot className="size-5 text-[var(--color-brand)]" />
           <span>FinTech Cron Monitor</span>
         </NavLink>
-        <nav className="ml-4 flex items-center gap-1">
+        <nav className="ml-4 flex flex-wrap items-center gap-1">
           {NAV.map(({ to, label, Icon, end }) => (
             <NavLink
               key={to}
@@ -56,7 +58,7 @@ export function AppShell() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)]',
+                  'flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)]',
                   isActive && 'bg-[var(--color-surface-2)] text-[var(--color-text)]',
                 )
               }

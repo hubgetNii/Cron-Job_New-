@@ -56,6 +56,18 @@ describe('renderK6Script', () => {
     expect(s).not.toMatch(/Bearer [A-Za-z0-9_-]{8,}/);
   });
 
+  it('pre-allocates VUs for a slow target at the PEAK rate, not rate/10', () => {
+    // 50 rps LOAD → peak 50 → 100 VUs (capped by maxVus 120). The old rate/10 default gave 5.
+    expect(render()).toContain('preAllocatedVUs: 100');
+    expect(render(plan({ maxVus: 30 }))).toContain('preAllocatedVUs: 30'); // never above maxVus
+    expect(render(plan({ profile: 'SPIKE', durationSeconds: 60, maxVus: 2000 }))).toContain(
+      'preAllocatedVUs: 1000',
+    ); // 500 rps peak ×2, capped
+    expect(render(plan({ targetRps: 1, profile: 'SMOKE', durationSeconds: 10 }))).toContain(
+      'preAllocatedVUs: 5',
+    );
+  });
+
   it('refreshes tokens proactively, never earlier than 30% of the token life', () => {
     const s = render(plan(), { auth: 'form' });
     expect(s).toContain('ttl * 0.3');

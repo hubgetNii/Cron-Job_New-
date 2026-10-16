@@ -26,6 +26,20 @@ import { PlanConfigSchema, peakRps } from '../../domain/load-plan.js';
 import * as runs from '../../repositories/load-test-runs.repo.js';
 import { abortRun, createPlan, queueRun } from '../../services/loadtest/run.service.js';
 import { effectiveRps } from '../../domain/load-plan.js';
+import {
+  buildLoadRunReport,
+  buildReadinessReport,
+  buildSuiteReport,
+  listReports,
+} from '../../services/loadtest/report/report.service.js';
+import {
+  REPORT_CONTENT_TYPES,
+  renderCsv,
+  renderHtml,
+  renderPdf,
+  renderXlsx,
+} from '../../services/loadtest/report/exporters.js';
+import type { AnyReport } from '../../services/loadtest/report/report.types.js';
 import { CATALOG, catalogSummary } from '../../loadtest/contract/catalog.js';
 import { CHECKS } from '../../loadtest/correctness/checks.js';
 import { SECURITY_CHECKS } from '../../loadtest/correctness/security.js';
@@ -461,5 +475,94 @@ loadTestRouter.get(
     const run = await correctness.getCorrectnessRun(idParam.parse(req.params.id));
     if (!run || run.suite !== 'security') throw new NotFoundError('Security run not found');
     res.json({ data: run });
+  },
+);
+
+/* ── Reports (Phase 27) ────────────────────────────────────────────────── */
+
+/** Business teams (COMPLIANCE, MANAGEMENT) read reports; only operators start runs. */
+const canReport = requireRole('ADMIN', 'OPERATOR', 'DEVELOPER', 'COMPLIANCE', 'MANAGEMENT');
+
+const reportQuery = z.object({
+  format: z.enum(['json', 'html', 'xlsx', 'csv', 'pdf']).default('json'),
+  /** CSV only: which table to export (Objectives, Findings, Time series, Checks, Gates, …). */
+  table: z.string().max(40).optional(),
+});
+
+/** Sends a report in the requested format. HTML is served as a download with a no-script CSP. */
+async function sendReport(
+  res: Response,
+  report: AnyReport,
+  q: z.infer<typeof reportQuery>,
+): Promise<void> {
+  const base = `${report.meta.kind}-report-${report.meta.id.slice(0, 8)}`;
+  if (q.format === 'json') {
+    res.json({ data: report });
+    return;
+  }
+  const type = REPORT_CONTENT_TYPES[q.format];
+  res.setHeader('Content-Type', type);
+  res.setHeader('Content-Disposition', `attachment; filename="${base}.${q.format}"`);
+  if (q.format === 'html') {
+    // Inline styles only; never scripts. The report escapes every dynamic value as well.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    );
+    res.send(renderHtml(report));
+  } else if (q.format === 'csv') {
+    res.send(renderCsv(report, q.table));
+  } else if (q.format === 'xlsx') {
+    res.send(await renderXlsx(report));
+  } else {
+    res.send(await renderPdf(report));
+  }
+}
+
+/** Index of every load, correctness and security run with its verdict. */
+loadTestRouter.get('/load-tests/reports', canReport, async (req: Request, res: Response) => {
+  const q = z
+    .object({
+      apiId: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(40),
+    })
+    .parse(req.query);
+  res.json({ data: await listReports({ ...(q.apiId ? { apiId: q.apiId } : {}), limit: q.limit }) });
+});
+
+loadTestRouter.get(
+  '/load-tests/runs/:id/report',
+  canReport,
+  async (req: Request, res: Response) => {
+    await sendReport(
+      res,
+      await buildLoadRunReport(idParam.parse(req.params.id)),
+      reportQuery.parse(req.query),
+    );
+  },
+);
+
+for (const suite of ['correctness', 'security'] as const) {
+  loadTestRouter.get(
+    `/load-tests/${suite}-runs/:id/report`,
+    canReport,
+    async (req: Request, res: Response) => {
+      const report = await buildSuiteReport(idParam.parse(req.params.id));
+      if (report.suite !== suite) throw new NotFoundError(`${suite} run not found`);
+      await sendReport(res, report, reportQuery.parse(req.query));
+    },
+  );
+}
+
+/** Gate-based production-readiness for one target, from the latest evidence. */
+loadTestRouter.get(
+  '/load-tests/readiness/:apiId',
+  canReport,
+  async (req: Request, res: Response) => {
+    await sendReport(
+      res,
+      await buildReadinessReport(idParam.parse(req.params.apiId)),
+      reportQuery.parse(req.query),
+    );
   },
 );

@@ -15,6 +15,7 @@
     "create-admin": "tsx src/scripts/create-admin.ts",
     "reseal-credentials": "tsx src/scripts/reseal-credentials.ts",
     "rotate-admin": "tsx src/scripts/rotate-admin.ts",
+    "demo:loadtest": "tsx src/scripts/demo-loadtest.ts",
     "seed:ismart-sandbox": "tsx src/scripts/seed-ismart-sandbox.ts",
     "seed:mpsms": "tsx src/scripts/seed-mpsms.ts",
     "seed:mpsms-check": "tsx src/scripts/seed-mpsms-check.ts",

@@ -1,4 +1,4 @@
-import { buildStages, type PlanConfig } from '../../domain/load-plan.js';
+import { buildStages, peakRps, type PlanConfig } from '../../domain/load-plan.js';
 
 export type AuthMode = 'none' | 'basic' | 'form';
 
@@ -49,8 +49,11 @@ export function renderK6Script({ plan, url, auth, hasData }: ScriptInput): strin
     authMode: auth,
     dataSelection: plan.dataSelection,
   };
+  // Concurrency needed ≈ rate × latency. Assuming a fast target (rate/10) makes k6 drop
+  // iterations while it spins up VUs against a slow one, which would wrongly mark the run
+  // as a saturated generator. Pre-allocate for a ~2 s response at the PEAK rate instead.
   const preAllocated =
-    plan.preAllocatedVus ?? Math.min(plan.maxVus, Math.max(1, Math.ceil(plan.targetRps / 10)));
+    plan.preAllocatedVus ?? Math.min(plan.maxVus, Math.max(5, Math.ceil(peakRps(plan) * 2)), 1000);
 
   return `import http from 'k6/http';
 import encoding from 'k6/encoding';

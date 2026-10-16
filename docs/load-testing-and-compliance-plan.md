@@ -1,6 +1,6 @@
 # Fintech Load Testing & Compliance Assurance — Feature Plan (Phases 21–28)
 
-Status: **Phases 21–26 BUILT (2026-10-15/16); 27–28 planned.** Open items: see `docs/load-testing-open-items.md`. Continues numbering after Phases 12–20 (observability & reporting).
+Status: **Phases 21–27 BUILT (2026-10-15/16); 28 planned.** Open items: see `docs/load-testing-open-items.md`. Continues numbering after Phases 12–20 (observability & reporting).
 
 ## 1. Goal
 
@@ -357,10 +357,27 @@ Aligned to the **OWASP API Security Top 10 (2023)**. It checks that defences *ho
 
 **Live vs simulator.** Simulator: all 17 run. Live sandbox: `auth.token-expiry-enforced` and `authz.permission-enforced` are simulator-only (SKIPPED); `bola.cross-account-access` needs a credential for a second account (`tokenUsernameB` / `tokenPasswordB` on the target) or is SKIPPED; wrong-secret attempts are never made against the REAL client id on a live identity service (lockout risk) — only bogus ids; `ssrf` and `flows` are advisory live. API: `GET /load-tests/security-checks`, `POST/GET /load-tests/security-runs[/:id]`. Safety-gate peak: 20 concurrent (fits the 25 rps sandbox ceiling).
 
+### Phase 27 — SLO engine, readiness and the report page (done)
+**One report model, two audiences.** Every report is a single JSON structure; the dashboard page, the printable HTML, PDF, Excel, CSV and (Phase 28) the evidence pack are all rendered from it, so they cannot disagree. The *Summary* view is written for business and compliance readers (a decision, plain sentences, no jargon); the *Technical* view carries the chart, percentiles, status codes, plan history, event log, run configuration and reproduction commands.
+
+**SLO engine** (`src/domain/load-slo.ts`, pure, tested). Each run is graded against objectives derived from the request type (read / write / batch) and overridable per plan (`slo`): P95/P99 latency, service failures (5xx/timeouts), valid requests refused (4xx), throttling (429), planned-volume delivered, token rejections, generator health, and — for BREAKPOINT/STRESS — sustained capacity. Every check carries a one-sentence plain-language explanation. Verdicts: **PASS · PASS_WITH_WARNINGS · FAIL · INCONCLUSIVE**. A run that cannot prove anything (generator saturated, stopped by a person or the kill switch, invalidated by credentials/limits, or the runner failed) is INCONCLUSIVE — never a pass, never a blame on the service. A guardrail trip on 5xx/429 *is* a FAIL, because the service began failing under load.
+
+**Findings** (`src/domain/load-findings.ts`). Every failed objective or assertion becomes a finding with *what it means for customers*, *what we saw*, and *what to do*, rated by the worst affected control (idempotency, ledger and reconciliation failures are CRITICAL; an advisory miss is a LOW "hardening suggestion"). Deterministic wording, so reports are comparable and auditable.
+
+**Production readiness** (`src/domain/load-readiness.ts`). Gates, not a weighted average: money correctness, security and steady load are hard gates; spike, capacity and freshness are advisory unless they fail. A missing required gate is **INCOMPLETE**, never silently passed. **Simulator evidence can never make a service READY** — it proves the tests work, not that the vendor's service does — and the report says so on every page. The 0–100 score is provisional and secondary.
+
+**API** (business roles COMPLIANCE and MANAGEMENT can read; only operators start runs): `GET /load-tests/reports` (index), `/runs/:id/report`, `/correctness-runs/:id/report`, `/security-runs/:id/report`, `/readiness/:apiId`, each with `?format=json|html|xlsx|csv|pdf` (CSV takes `&table=`). The HTML download is script-free, escapes every dynamic value, and is served with `default-src 'none'; style-src 'unsafe-inline'`. CSV neutralises spreadsheet-formula injection.
+
+**Dashboard** — new **Load tests** area: *Reports* (filter by type, service, "real service only"), *Readiness* (gate table + next steps per service), *API catalog* (all 33 endpoints with status), and the report detail page with the Summary / Technical toggle, "Open printable report" and PDF / Excel / CSV / JSON downloads. Verified in a real browser against real data.
+
+**Demo data.** `npm run demo:loadtest` drives the real runner, the correctness suite and the security suite against the simulator and stores real results (one deliberately degraded run, so a FAIL report exists). It attaches them to an inactive target named "Demo — iSmartPay Simulator"; `npm run demo:loadtest -- --clean` removes it.
+
+**Bugs found by looking at the real output.** (1) The degraded demo run came out *Inconclusive* instead of *Fail*: the runner pre-allocated k6 virtual users assuming ~100 ms responses, so against a slow service k6 dropped iterations while spinning up VUs and the SLO engine rightly distrusted the run. Pre-allocation now scales with the peak rate (≈2 s response). (2) The decision sentence appeared twice, the headline had nested parentheses, the event log listed each lifecycle step twice, and the extra nav item overflowed the header — all fixed.
+
 ### Open items
 1. **Ask iSmart:** sandbox rate limits; idempotency-key retention; collection `failureReason` values; whether wallet transfers have a test mode; permissions for a test key; whether `POST /v1/settlements` moves real funds in test; party-lookup tolerance.
 2. **Live webhook checks** need a public HTTPS endpoint (tunnel or the deployed API).
 3. One e2e test (`denies by default and requires roles`) failed once in a full run with 404 instead of 403 and did not reproduce in two reruns — unexplained; watch for recurrence.
 
 ### Next
-Phase 26 — security / abuse-resilience suite (OWASP API Top 10: BOLA, auth, resource consumption, business-flow abuse, misconfiguration) · Phase 27 — SLO engine, readiness score and the report page · Phase 28 — compliance evidence (PCI DSS / OWASP / Bank of Ghana mapping, tamper-evident evidence packs).
+Phase 26 — security / abuse-resilience suite (OWASP API Top 10: BOLA, auth, resource consumption, business-flow abuse, misconfiguration) · Phase 28 — compliance evidence (PCI DSS / OWASP / Bank of Ghana mapping, tamper-evident evidence packs).
