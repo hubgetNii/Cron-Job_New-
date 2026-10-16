@@ -34,6 +34,16 @@ export interface OAuth2Credentials {
    * `'{}'` when omitted.
    */
   tokenBody?: string;
+  /**
+   * `basic` (default): HTTP Basic + JSON body. `form`: the standard OAuth2
+   * client-credentials grant as `application/x-www-form-urlencoded`
+   * (`client_id`/`client_secret`/`resource`), which is what the iSmartPay
+   * developer API uses. Form mode reads `access_token` / `expires_in`
+   * (relative seconds) unless the paths are overridden.
+   */
+  tokenMode?: 'basic' | 'form';
+  /** `resource` field sent in form mode. */
+  tokenResource?: string;
 }
 
 interface CachedToken {
@@ -55,16 +65,25 @@ function cacheKey(creds: OAuth2Credentials): string {
 }
 
 async function fetchToken(creds: OAuth2Credentials): Promise<CachedToken> {
+  const form = creds.tokenMode === 'form';
   const encoded = Buffer.from(`${creds.tokenUsername}:${creds.tokenPassword}`).toString('base64');
-  const body = substituteUuid(creds.tokenBody ?? '{}', randomUUID());
   const res = await request(creds.tokenUrl, {
     method: 'POST',
-    headers: {
-      authorization: `Basic ${encoded}`,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body,
+    headers: form
+      ? { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }
+      : {
+          authorization: `Basic ${encoded}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+    body: form
+      ? new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: creds.tokenUsername,
+          client_secret: creds.tokenPassword,
+          resource: creds.tokenResource ?? 'ismartpay',
+        }).toString()
+      : substituteUuid(creds.tokenBody ?? '{}', randomUUID()),
     signal: AbortSignal.timeout(10_000),
   });
   const text = await res.body.text();
@@ -75,7 +94,11 @@ async function fetchToken(creds: OAuth2Credentials): Promise<CachedToken> {
   // pattern, which also omits the body).
   if (res.statusCode >= 300) {
     log.warn(
-      { tokenUrl: creds.tokenUrl, statusCode: res.statusCode, body: scrubPci(maskInlineSecrets(text.slice(0, 300))) },
+      {
+        tokenUrl: creds.tokenUrl,
+        statusCode: res.statusCode,
+        body: scrubPci(maskInlineSecrets(text.slice(0, 300))),
+      },
       'OAuth2 token fetch failed',
     );
     throw new Error(`OAuth2 token fetch failed (HTTP ${res.statusCode})`);
@@ -92,20 +115,29 @@ async function fetchToken(creds: OAuth2Credentials): Promise<CachedToken> {
     throw new Error('OAuth2 token endpoint returned a non-JSON response');
   }
 
-  const tokenLookup = getByPath(json, creds.tokenPath ?? DEFAULT_TOKEN_PATH);
+  const tokenPath = creds.tokenPath ?? (form ? 'access_token' : DEFAULT_TOKEN_PATH);
+  const tokenLookup = getByPath(json, tokenPath);
   if (!tokenLookup.found || typeof tokenLookup.value !== 'string' || !tokenLookup.value) {
-    throw new Error(
-      `OAuth2 token not found at "${creds.tokenPath ?? DEFAULT_TOKEN_PATH}" in token response`,
-    );
+    throw new Error(`OAuth2 token not found at "${tokenPath}" in token response`);
   }
 
-  const expiryLookup = getByPath(json, creds.tokenExpiryPath ?? DEFAULT_TOKEN_EXPIRY_PATH);
-  const expirySeconds =
+  const expiryLookup = getByPath(
+    json,
+    creds.tokenExpiryPath ?? (form ? 'expires_in' : DEFAULT_TOKEN_EXPIRY_PATH),
+  );
+  const expiryValue =
     expiryLookup.found && typeof expiryLookup.value === 'number' ? expiryLookup.value : null;
-  const expiresAt =
-    expirySeconds !== null
-      ? expirySeconds * 1000 - SAFETY_MARGIN_MS
-      : Date.now() + FALLBACK_TTL_MS - SAFETY_MARGIN_MS;
+  let expiresAt: number;
+  if (expiryValue !== null && form) {
+    // `expires_in` is a lifetime. Tokens can be short (5 minutes), so never refresh
+    // earlier than 30% of the lifetime in, or every check would refetch.
+    const ttlMs = expiryValue * 1000;
+    expiresAt = Date.now() + ttlMs - Math.min(SAFETY_MARGIN_MS, Math.floor(ttlMs * 0.3));
+  } else if (expiryValue !== null) {
+    expiresAt = expiryValue * 1000 - SAFETY_MARGIN_MS;
+  } else {
+    expiresAt = Date.now() + FALLBACK_TTL_MS - SAFETY_MARGIN_MS;
+  }
 
   return { value: tokenLookup.value, expiresAt };
 }

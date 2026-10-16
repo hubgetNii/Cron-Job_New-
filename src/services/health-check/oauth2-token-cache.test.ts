@@ -1,6 +1,10 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { getOAuth2Token, resetOAuth2TokenCache, type OAuth2Credentials } from './oauth2-token-cache.js';
+import {
+  getOAuth2Token,
+  resetOAuth2TokenCache,
+  type OAuth2Credentials,
+} from './oauth2-token-cache.js';
 
 let server: Server;
 let baseUrl: string;
@@ -77,7 +81,8 @@ describe('getOAuth2Token', () => {
     respond = () => {
       call += 1;
       // First token already within the 60s safety margin of "now" — treated as expired.
-      const expiry = call === 1 ? Math.floor(Date.now() / 1000) + 30 : Math.floor(Date.now() / 1000) + 3600;
+      const expiry =
+        call === 1 ? Math.floor(Date.now() / 1000) + 30 : Math.floor(Date.now() / 1000) + 3600;
       return { status: 200, body: JSON.stringify({ data: { token: `tok-${call}`, expiry } }) };
     };
 
@@ -118,5 +123,34 @@ describe('getOAuth2Token', () => {
   it('throws on a non-2xx response', async () => {
     respond = () => ({ status: 401, body: 'unauthorized' });
     await expect(getOAuth2Token(creds())).rejects.toThrow(/HTTP 401/);
+  });
+
+  describe('form mode (iSmartPay-style client credentials)', () => {
+    it('posts a form-encoded grant without a Basic header and reads access_token', async () => {
+      respond = () => ({
+        status: 200,
+        body: JSON.stringify({ access_token: 'form-tok', token_type: 'Bearer', expires_in: 300 }),
+      });
+      const token = await getOAuth2Token(
+        creds({ tokenMode: 'form', tokenUsername: 'cli_x', tokenPassword: 'sec_y' }),
+      );
+      expect(token).toBe('form-tok');
+      expect(lastAuthHeader).toBeUndefined();
+      const p = new URLSearchParams(lastBody);
+      expect(p.get('grant_type')).toBe('client_credentials');
+      expect(p.get('client_id')).toBe('cli_x');
+      expect(p.get('client_secret')).toBe('sec_y');
+      expect(p.get('resource')).toBe('ismartpay');
+    });
+
+    it('caches a 5-minute token and does not refetch on every call', async () => {
+      respond = () => ({
+        status: 200,
+        body: JSON.stringify({ access_token: 'short', expires_in: 300 }),
+      });
+      await getOAuth2Token(creds({ tokenMode: 'form' }));
+      await getOAuth2Token(creds({ tokenMode: 'form' }));
+      expect(requestCount).toBe(1);
+    });
   });
 });
