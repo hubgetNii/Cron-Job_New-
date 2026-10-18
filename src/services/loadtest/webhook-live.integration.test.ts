@@ -20,7 +20,7 @@ let server: Server;
 let base: string;
 let slug = '';
 let apiId = '';
-let mode: 'good' | 'forged' | 'silent' | 'mismatched-id' = 'good';
+let mode: 'good' | 'forged' | 'silent' | 'mismatched-id' | 'staggered' | 'stuck' = 'good';
 const status = new Map<string, string>();
 
 const deliver = async (id: string, body: string, secret: string): Promise<void> => {
@@ -48,6 +48,26 @@ beforeAll(async () => {
         status.set(ref, 'settled');
         send(202, { reference: ref, status: 'accepted' });
         if (mode === 'silent') return;
+        if (mode === 'staggered' || mode === 'stuck') {
+          // Like the real sandbox: each step is its own event, seconds apart.
+          const steps: [string, string, number][] = [
+            ['collection.accepted', 'accepted', 100],
+            ['collection.status_changed', 'dispatched', 700],
+            ['collection.status_changed', 'settled', 1600],
+          ];
+          for (const [type, st, delay] of steps) {
+            if (mode === 'stuck' && st === 'settled') continue;
+            const eid = `evt_${ref}_${st}`;
+            const b = JSON.stringify({
+              id: eid,
+              type,
+              createdAt: new Date().toISOString(),
+              data: { reference: ref, status: st },
+            });
+            setTimeout(() => void deliver(eid, b, SECRET), delay);
+          }
+          return;
+        }
         const id = `evt_${ref}`;
         const body = JSON.stringify({
           id: mode === 'mismatched-id' ? 'evt_other' : id,
@@ -134,6 +154,21 @@ describe.skipIf(!dbUp)('live webhook check against the real receiver', () => {
     const r = (await runLive(8_000)).results[0]!;
     expect(r.status).toBe('FAIL');
     expect(r.assertions.find((a) => a.name.startsWith('envelope id'))?.pass).toBe(false);
+  }, 60_000);
+
+  it('passes when the lifecycle arrives as separate events seconds apart (what the real sandbox does)', async () => {
+    mode = 'staggered';
+    const r = (await runLive(10_000)).results[0]!;
+    expect(r.status, JSON.stringify(r.assertions)).toBe('PASS');
+  }, 60_000);
+
+  it('fails when the API says settled but no webhook ever reports it', async () => {
+    mode = 'stuck';
+    const r = (await runLive(3_000)).results[0]!;
+    expect(r.status).toBe('FAIL');
+    const a = r.assertions.find((x) => x.name.includes('final status'));
+    expect(a?.pass).toBe(false);
+    expect(a?.detail).toMatch(/dispatched/);
   }, 60_000);
 
   it('is skipped (not failed) with a clear reason when nothing arrives', async () => {

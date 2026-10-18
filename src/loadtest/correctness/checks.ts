@@ -768,18 +768,21 @@ export const CHECKS: Check[] = [
         key: c.idem(),
       });
       const detail = await pollStatus(c, `/v1/collections/${ref}`, COLLECTION_FINAL);
-      // Give the sender time to retry: its schedule is "6 attempts over about a day", so the first attempt is what we can wait for.
+      // The sender reports each step (accepted, dispatched, settled…) as its own event, seconds apart,
+      // so wait for the event that matches the API's final status — not just the first one to arrive.
+      const finalStatus = detail ? String(detail['status']) : null;
       const arrived = await c.waitFor(async () => {
         const d = await probe.deliveriesFor(ref);
-        return d.length > 0 ? d : null;
+        if (d.length === 0) return null;
+        return finalStatus === null || d.some((x) => x.eventStatus === finalStatus) ? d : null;
       }, c.webhookWaitMs);
-      if (!arrived) {
+      const early = await probe.deliveriesFor(ref);
+      if (!arrived && early.length === 0) {
         return {
           skip: `no webhook for ${ref} reached the receiver "${probe.label}" within ${Math.round(c.webhookWaitMs / 1000)} s — is its address registered in the iSmart test console and publicly reachable?`,
         };
       }
-      await c.waitFor(() => Promise.resolve(null), 3000); // let a trailing event land
-      const all = await probe.deliveriesFor(ref);
+      const all = arrived ?? early;
       const ids = new Set(all.map((d) => d.eventId));
       const best = all
         .map((d) => d.eventStatus ?? '')
@@ -809,9 +812,9 @@ export const CHECKS: Check[] = [
           all.filter((d) => d.signatureOk).every((d) => d.respondedWith === 200),
         ),
         ok(
-          'the best-ranked webhook status equals the API state',
-          detail !== null && (best === undefined || best === detail['status']),
-          `${String(best)} vs ${String(detail?.['status'])}`,
+          'a webhook reported the API’s final status, and none ranked above it',
+          detail !== null && best === detail['status'],
+          `webhooks reached ${String(best)}; API says ${String(detail?.['status'])}`,
         ),
         {
           name: 'repeat deliveries reuse one event id (de-duplicable)',
